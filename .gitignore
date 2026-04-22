@@ -1,0 +1,16 @@
+# Node dependencies
+backend/node_modules/
+frontend/node_modules/
+
+# Secrets
+backend/.env
+
+# Frontend build outputs
+frontend/dist/
+frontend/build/
+
+# Backend generated data: ignore everything except .gitkeep
+backend/database/*
+!backend/database/.gitkeep
+backend/reports/*
+!backend/reports/.gitkeep
