@@ -38,7 +38,7 @@ run_crawler() {
   echo "======================================================================"
   echo "[CRAWLER] Extracting JavaScript file URLs into js_files.txt"
   echo "======================================================================"
-  grep -Eo 'https?://[^[:space:]"'"'"'<>]+"?' "${endpoints_file}" \
+  grep -Eo "https?://[^[:space:]\"'<>]+\"?" "${endpoints_file}" \
     | awk '{ gsub(/"$/, "", $0); print $0 }' \
     | awk 'tolower($0) ~ /\.js([?#].*)?$/ { print $0 }' \
     | sort -u > "${js_files_file}"
@@ -46,7 +46,7 @@ run_crawler() {
   echo "======================================================================"
   echo "[CRAWLER] Searching endpoints output for potential API keys and tokens"
   echo "======================================================================"
-  grep -Eio '(AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk_(live|test)_[0-9A-Za-z]{16,}|(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)[[:space:]"'"'":=]+[A-Za-z0-9._-]{8,})' "${endpoints_file}" \
+  grep -Eio "(AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk_(live|test)_[0-9A-Za-z]{16,}|(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)[[:space:]\"':=]+[A-Za-z0-9._-]{8,})" "${endpoints_file}" \
     | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
     | sort -u > "${potential_leaks_file}"
 

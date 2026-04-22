@@ -6,6 +6,10 @@ COPY package.json ./
 COPY package-lock.json* ./
 RUN npm install
 
+# Ensure Vite entry files are present in /app before building.
+COPY index.html ./
+COPY src ./src
+
 COPY . .
 
 RUN npm run build
