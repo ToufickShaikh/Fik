@@ -15,6 +15,7 @@ run_port_scan() {
   done
 
   local live_hosts_file="${OUTPUT_DIR}/live_hosts.txt"
+  local CLEAN_HOSTS="${OUTPUT_DIR}/hosts_stripped.txt"
   local ports_file="${OUTPUT_DIR}/ports.txt"
   local non_standard_ports_file="${OUTPUT_DIR}/non_standard_ports.txt"
   local active_ports_file="${OUTPUT_DIR}/active_ports.txt"
@@ -33,9 +34,17 @@ run_port_scan() {
   fi
 
   echo "======================================================================"
+  echo "[PORTSCAN] Stripping URL schemes and trailing slashes for naabu input"
+  echo "[PORTSCAN] Clean hosts file: ${CLEAN_HOSTS}"
+  echo "======================================================================"
+  sed -E 's#^[[:space:]]*https?://##; s#/.*$##; s#[[:space:]]+$##' "${live_hosts_file}" \
+    | sed '/^[[:space:]]*$/d' \
+    | sort -u > "${CLEAN_HOSTS}"
+
+  echo "======================================================================"
   echo "[PORTSCAN] Running naabu silently on top 1000 ports"
   echo "======================================================================"
-  naabu -silent -top-ports 1000 -l "${live_hosts_file}" -o "${ports_file}"
+  naabu -silent -top-ports 1000 -list "${CLEAN_HOSTS}" -o "${ports_file}"
 
   echo "======================================================================"
   echo "[PORTSCAN] Extracting host:port pairs and filtering non-standard ports"
