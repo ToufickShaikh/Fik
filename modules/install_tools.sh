@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Self-healing dependency installer.
+# Verifies presence of required Go-based tools, attempts `go install` for any
+# missing one, and symlinks the binary into /usr/local/bin (with sudo fallback).
 
-# Mapping of CLI binary name -> `go install` source path (latest).
-# Kept as parallel arrays for bash 3 compatibility (macOS default).
 TOOL_NAMES=(
   "subfinder"
   "httpx"
@@ -47,7 +47,6 @@ _symlink_to_usr_local_bin() {
   fi
 
   if [[ -L "${dst}" || -e "${dst}" ]]; then
-    # Already present (symlink, real binary, or existing link). Leave it alone.
     return 0
   fi
 
@@ -56,7 +55,7 @@ _symlink_to_usr_local_bin() {
   elif command -v sudo >/dev/null 2>&1; then
     sudo ln -s "${src}" "${dst}"
   else
-    echo "[INSTALL][WARN] Cannot symlink ${src} -> ${dst} (no write permission and sudo unavailable)."
+    log_warn "Cannot symlink ${src} -> ${dst} (no write permission and sudo unavailable)."
     return 1
   fi
 }
@@ -65,11 +64,11 @@ _install_one_tool() {
   local tool="$1"
   local install_cmd="$2"
 
-  echo "[INSTALL] Installing missing tool: ${tool}"
-  echo "[INSTALL] Running: ${install_cmd}"
+  log_info "Installing missing tool: ${tool}"
+  log_info "Running: ${install_cmd}"
 
   if ! eval "${install_cmd}"; then
-    echo "[INSTALL][ERROR] go install failed for ${tool}."
+    log_error "go install failed for ${tool}."
     return 1
   fi
 
@@ -83,7 +82,7 @@ _install_one_tool() {
 
 ensure_required_tools() {
   if ! command -v go >/dev/null 2>&1; then
-    echo "[INSTALL][ERROR] 'go' is not installed. Install Go (https://go.dev/dl/) before running this framework."
+    log_error "'go' is not installed. Install Go (https://go.dev/dl/) before running this framework."
     return 1
   fi
 
@@ -99,26 +98,25 @@ ensure_required_tools() {
     fi
 
     if ! _install_one_tool "${tool}" "${install_cmd}"; then
-      echo "[INSTALL][ERROR] Failed to install ${tool}. Please install it manually: ${install_cmd}"
+      log_error "Failed to install ${tool}. Please install it manually: ${install_cmd}"
       missing_after+=("${tool}")
       continue
     fi
 
-    # Re-check PATH after install + symlink attempt.
     hash -r 2>/dev/null || true
     if ! command -v "${tool}" >/dev/null 2>&1; then
-      echo "[INSTALL][ERROR] Failed to install ${tool}. Please install it manually: ${install_cmd}"
+      log_error "Failed to install ${tool}. Please install it manually: ${install_cmd}"
       missing_after+=("${tool}")
     else
-      echo "[INSTALL] ${tool} is now available."
+      log_success "${tool} is now available."
     fi
   done
 
   if (( ${#missing_after[@]} > 0 )); then
-    echo "[INSTALL][ERROR] The following tools are still missing: ${missing_after[*]}"
+    log_error "The following tools are still missing: ${missing_after[*]}"
     return 1
   fi
 
-  echo "[INSTALL] All required tools are present."
+  log_success "All required tools are present."
   return 0
 }

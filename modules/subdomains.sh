@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# Subdomain enumeration + liveness probing.
+# Stealth: httpx rate-limited & retried, root domain always injected to
+# guarantee a non-empty target list downstream.
 
 run_subdomain_enumeration() {
   if [[ -z "${TARGET_DOMAIN:-}" ]]; then
-    echo "[ERROR] TARGET_DOMAIN is not set."
+    log_error "TARGET_DOMAIN is not set."
     return 1
   fi
 
   if [[ -z "${OUTPUT_DIR:-}" ]]; then
-    echo "[ERROR] OUTPUT_DIR is not set."
+    log_error "OUTPUT_DIR is not set."
     return 1
   fi
 
   for required_tool in subfinder assetfinder httpx; do
     if ! command -v "${required_tool}" >/dev/null 2>&1; then
-      echo "[ERROR] Missing required tool: ${required_tool}"
+      log_error "Missing required tool: ${required_tool}"
       return 1
     fi
   done
@@ -23,42 +25,37 @@ run_subdomain_enumeration() {
   local assetfinder_raw="${OUTPUT_DIR}/assetfinder.txt"
   local subdomains_file="${OUTPUT_DIR}/subdomains.txt"
   local live_hosts_file="${OUTPUT_DIR}/live_hosts.txt"
+  local httpx_rate_limit="${HTTPX_RATE_LIMIT:-50}"
+  local httpx_threads="${HTTPX_THREADS:-25}"
+  local httpx_retries="${HTTPX_RETRIES:-2}"
 
-  echo "=============================================================="
-  echo "[SUBDOMAINS] Starting subdomain enumeration"
-  echo "[SUBDOMAINS] Running subfinder on ${TARGET_DOMAIN}"
-  echo "=============================================================="
-  subfinder -silent -d "${TARGET_DOMAIN}" -o "${subfinder_raw}"
+  log_step "Subdomain enumeration for ${TARGET_DOMAIN}"
 
-  echo "=============================================================="
-  echo "[SUBDOMAINS] Running assetfinder on ${TARGET_DOMAIN}"
-  echo "=============================================================="
-  assetfinder --subs-only "${TARGET_DOMAIN}" > "${assetfinder_raw}"
+  # Pre-create raw output files so missing-output doesn't break the merge step.
+  : > "${subfinder_raw}"
+  : > "${assetfinder_raw}"
 
-  echo "=============================================================="
-  echo "[SUBDOMAINS] Combining and deduplicating results"
-  echo "=============================================================="
-  cat "${subfinder_raw}" "${assetfinder_raw}" \
-    | sed '/^[[:space:]]*$/d' \
-    | sort -u > "${subdomains_file}"
+  run_tool "subfinder" subfinder -silent -d "${TARGET_DOMAIN}" -o "${subfinder_raw}" || true
+  run_tool "assetfinder" bash -c "assetfinder --subs-only '${TARGET_DOMAIN}' > '${assetfinder_raw}'" || true
 
-  echo "[INFO] Adding main domain to lists"
-  echo "${TARGET_DOMAIN}" >> "${subdomains_file}"
-  sort -u "${subdomains_file}" -o "${subdomains_file}"
+  log_info "Combining, injecting root domain, and deduplicating"
+  {
+    cat "${subfinder_raw}" "${assetfinder_raw}" 2>/dev/null || true
+    echo "${TARGET_DOMAIN}"
+  } | sed '/^[[:space:]]*$/d' | sort -u > "${subdomains_file}"
 
-  echo "[SUBDOMAINS] Saved consolidated subdomains to ${subdomains_file}"
+  log_info "Subdomain count: $(wc -l < "${subdomains_file}" | tr -d ' ')"
 
   if [[ ! -s "${subdomains_file}" ]]; then
-    echo "[WARN] No subdomains found. Writing empty live_hosts.txt"
+    log_warn "subdomains.txt is empty even after injecting root domain; writing empty live_hosts.txt"
     : > "${live_hosts_file}"
     return 0
   fi
 
-  echo "=============================================================="
-  echo "[LIVENESS] Probing live hosts with httpx (threads: 50)"
-  echo "=============================================================="
-  cat "${subdomains_file}" | sort -u | httpx -silent -threads 50 > "${live_hosts_file}"
+  log_step "Probing live hosts with httpx (rate-limit ${httpx_rate_limit}/s, retries ${httpx_retries})"
+  : > "${live_hosts_file}"
+  run_tool "httpx" bash -c \
+    "sort -u '${subdomains_file}' | httpx -silent -threads ${httpx_threads} -rl ${httpx_rate_limit} -retries ${httpx_retries} > '${live_hosts_file}'" || true
 
-  echo "[LIVENESS] Saved live hosts to ${live_hosts_file}"
-  echo "[LIVENESS] Live host count: $(wc -l < "${live_hosts_file}" | tr -d ' ')"
+  log_success "Live hosts: $(wc -l < "${live_hosts_file}" | tr -d ' ')"
 }
