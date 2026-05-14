@@ -42,6 +42,10 @@ run_subdomain_enumeration() {
     | sed '/^[[:space:]]*$/d' \
     | sort -u > "${subdomains_file}"
 
+  echo "[INFO] Adding main domain to lists"
+  echo "${TARGET_DOMAIN}" >> "${subdomains_file}"
+  sort -u "${subdomains_file}" -o "${subdomains_file}"
+
   echo "[SUBDOMAINS] Saved consolidated subdomains to ${subdomains_file}"
 
   if [[ ! -s "${subdomains_file}" ]]; then
@@ -53,7 +57,7 @@ run_subdomain_enumeration() {
   echo "=============================================================="
   echo "[LIVENESS] Probing live hosts with httpx (threads: 50)"
   echo "=============================================================="
-  httpx -silent -threads 50 -l "${subdomains_file}" -o "${live_hosts_file}"
+  cat "${subdomains_file}" | sort -u | httpx -silent -threads 50 > "${live_hosts_file}"
 
   echo "[LIVENESS] Saved live hosts to ${live_hosts_file}"
   echo "[LIVENESS] Live host count: $(wc -l < "${live_hosts_file}" | tr -d ' ')"

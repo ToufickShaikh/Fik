@@ -31,9 +31,15 @@ run_crawler() {
   fi
 
   echo "======================================================================"
-  echo "[CRAWLER] Running katana in headless mode for endpoints and JS discovery"
+  echo "[CRAWLER] Running katana with stealth & stability flags"
   echo "======================================================================"
-  katana -silent -headless -jc -list "${live_hosts_file}" -o "${endpoints_file}"
+  katana -list "${live_hosts_file}" \
+    -headless \
+    -no-sandbox \
+    -delay 2 \
+    -retry 3 \
+    -f url \
+    -o "${endpoints_file}"
 
   echo "======================================================================"
   echo "[CRAWLER] Extracting JavaScript file URLs into js_files.txt"

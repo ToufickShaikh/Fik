@@ -37,14 +37,14 @@ run_port_scan() {
   echo "[PORTSCAN] Stripping URL schemes and trailing slashes for naabu input"
   echo "[PORTSCAN] Clean hosts file: ${CLEAN_HOSTS}"
   echo "======================================================================"
-  sed -E 's#^[[:space:]]*https?://##; s#/.*$##; s#[[:space:]]+$##' "${live_hosts_file}" \
+  sed -e 's|^[^/]*//||' -e 's|/.*$||' "${live_hosts_file}" \
     | sed '/^[[:space:]]*$/d' \
     | sort -u > "${CLEAN_HOSTS}"
 
   echo "======================================================================"
   echo "[PORTSCAN] Running naabu silently on top 1000 ports"
   echo "======================================================================"
-  naabu -silent -top-ports 1000 -list "${CLEAN_HOSTS}" -o "${ports_file}"
+  naabu -silent -list "${CLEAN_HOSTS}" -top-ports 1000 -o "${ports_file}"
 
   echo "======================================================================"
   echo "[PORTSCAN] Extracting host:port pairs and filtering non-standard ports"
