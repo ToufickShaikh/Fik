@@ -36,8 +36,8 @@ run_crawler() {
   katana -list "${live_hosts_file}" \
     -headless \
     -no-sandbox \
-    -delay 2 \
-    -retry 3 \
+    -delay 3 \
+    -concurrency 2 \
     -f url \
     -o "${endpoints_file}"
 
