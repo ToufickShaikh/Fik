@@ -85,6 +85,7 @@ echo "[INFO] Output folder : ${OUTPUT_DIR}"
 echo "=============================================================="
 
 MODULE_FILES=(
+	"install_tools.sh"
 	"subdomains.sh"
 	"portscan.sh"
 	"crawler.sh"
@@ -105,6 +106,18 @@ MODULE_FUNCTIONS=(
 for module_file in "${MODULE_FILES[@]}"; do
 	source_module "${module_file}"
 done
+
+if declare -F ensure_required_tools >/dev/null 2>&1; then
+	echo "=============================================================="
+	echo "[BOOT] Verifying required tools (self-healing dependency check)"
+	echo "=============================================================="
+	if ! ensure_required_tools; then
+		echo "[ERROR] One or more required tools are missing and could not be installed. Aborting."
+		exit 1
+	fi
+else
+	echo "[WARN] ensure_required_tools function not available; continuing without dependency check."
+fi
 
 for module_function in "${MODULE_FUNCTIONS[@]}"; do
 	run_module_function "${module_function}"
