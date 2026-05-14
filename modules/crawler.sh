@@ -38,8 +38,14 @@ run_crawler() {
     -no-sandbox \
     -delay 3 \
     -concurrency 2 \
+    -crawl-duration 5m \
+    -retry 3 \
     -f url \
-    -o "${endpoints_file}"
+    -o "${endpoints_file}" || true
+
+  if [[ ! -f "${endpoints_file}" ]]; then
+    : > "${endpoints_file}"
+  fi
 
   echo "======================================================================"
   echo "[CRAWLER] Extracting JavaScript file URLs into js_files.txt"
