@@ -110,6 +110,24 @@ for module_function in "${MODULE_FUNCTIONS[@]}"; do
 	run_module_function "${module_function}"
 done
 
+SCAN_RESULTS_JSON="${OUTPUT_DIR}/scan_results.json"
+INGEST_URL="${INGEST_URL:-http://localhost:3000/api/ingest}"
+
+if [[ -f "${SCAN_RESULTS_JSON}" ]]; then
+	if declare -F upload_results >/dev/null 2>&1; then
+		echo "=============================================================="
+		echo "[UPLOAD] Sending ${SCAN_RESULTS_JSON} to ${INGEST_URL}"
+		echo "=============================================================="
+		if ! upload_results "${SCAN_RESULTS_JSON}" "${INGEST_URL}"; then
+			echo "[WARN] Upload to backend failed. Local results preserved at ${SCAN_RESULTS_JSON}"
+		fi
+	else
+		echo "[WARN] upload_results function not available; skipping backend upload."
+	fi
+else
+	echo "[WARN] scan_results.json not found at ${SCAN_RESULTS_JSON}; skipping upload."
+fi
+
 echo "=============================================================="
 echo "[DONE] All enabled modules completed"
 echo "[INFO] Results available in ${OUTPUT_DIR}"
