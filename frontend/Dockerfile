@@ -1,4 +1,5 @@
-FROM node:18-alpine
+## Stage 1 — Build the React app
+FROM node:18-alpine AS build
 
 WORKDIR /app
 
@@ -6,15 +7,21 @@ COPY package.json ./
 COPY package-lock.json* ./
 RUN npm install
 
-# Ensure Vite entry files are present in /app before building.
 COPY index.html ./
 COPY src ./src
-
-COPY . .
+COPY vite.config.js ./
 
 RUN npm run build
-RUN npm install -g serve
 
-EXPOSE 5173
+## Stage 2 — Serve with nginx (handles /api + /ws proxy to backend)
+FROM nginx:1.27-alpine
 
-CMD ["serve", "-s", "dist", "-l", "5173"]
+# Remove default config
+RUN rm /etc/nginx/conf.d/default.conf
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

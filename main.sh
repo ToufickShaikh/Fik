@@ -82,7 +82,6 @@ while getopts ":d:p:h" opt; do
     p)
       SCAN_PROFILE="${OPTARG}"
       ;;
-      ;;
     h)
       print_help
       exit 0
@@ -139,6 +138,21 @@ MODULE_FUNCTIONS=(
   "run_vulnerability_scan"
   "export_to_json"
 )
+
+# Filter module list based on scan profile.
+# quick → skip crawler and fuzzer for speed
+# deep  → run everything (full chain)
+_filtered_functions=()
+for _fn in "${MODULE_FUNCTIONS[@]}"; do
+  if [[ "${SCAN_PROFILE}" == "quick" ]] && \
+     [[ "${_fn}" == "run_crawler" || "${_fn}" == "run_fuzzer" ]]; then
+    log_info "Profile '${SCAN_PROFILE}': skipping ${_fn}"
+    continue
+  fi
+  _filtered_functions+=("${_fn}")
+done
+MODULE_FUNCTIONS=( "${_filtered_functions[@]}" )
+unset _filtered_functions _fn
 
 for module_file in "${MODULE_FILES[@]}"; do
   source_module "${module_file}"

@@ -20,10 +20,21 @@ run_vulnerability_scan() {
   local nuclei_rate_limit="${NUCLEI_RATE_LIMIT:-20}"
   local nuclei_bulk_size="${NUCLEI_BULK_SIZE:-10}"
   local nuclei_retries="${NUCLEI_RETRIES:-2}"
-  local nuclei_concurrency="${NUCLEI_CONCURRENCY:-10}"
-  # NUCLEI_TAGS is set by detect_technologies() (tech_detector.sh). Fall back
-  # to a broad default so the scan always produces useful output.
-  local effective_tags="${NUCLEI_TAGS:-cve,exposure}"
+  # Profile-aware defaults (NUCLEI_TAGS / NUCLEI_CONCURRENCY env vars take precedence).
+  local _profile_tags
+  case "${SCAN_PROFILE:-standard}" in
+    quick) _profile_tags="cve,medium,low" ;;
+    deep)  _profile_tags="cve,exposure,misconfig,takeover,network" ;;
+    *)     _profile_tags="cve,exposure" ;;
+  esac
+  local nuclei_concurrency
+  case "${SCAN_PROFILE:-standard}" in
+    quick) nuclei_concurrency="${NUCLEI_CONCURRENCY:-5}"  ;;
+    deep)  nuclei_concurrency="${NUCLEI_CONCURRENCY:-25}" ;;
+    *)     nuclei_concurrency="${NUCLEI_CONCURRENCY:-10}" ;;
+  esac
+  # NUCLEI_TAGS (set by detect_technologies) overrides the profile default.
+  local effective_tags="${NUCLEI_TAGS:-${_profile_tags}}"
 
   log_step "Vulnerability scan (nuclei)"
   log_info "Input file : ${live_hosts_file}"

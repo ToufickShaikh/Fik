@@ -19,7 +19,18 @@ run_fuzzer() {
     return 1
   fi
 
-  local wordlist="${FFUF_WORDLIST:-/usr/share/wordlists/dirb/common.txt}"
+  # Resolve wordlist: deep profile tries the larger dirbuster list first.
+  local wordlist
+  if [[ "${SCAN_PROFILE:-standard}" == "deep" ]]; then
+    local _deep_wl="${FFUF_DEEP_WORDLIST:-/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt}"
+    if [[ -f "${_deep_wl}" ]]; then
+      wordlist="${_deep_wl}"
+    else
+      wordlist="${FFUF_WORDLIST:-/usr/share/wordlists/dirb/common.txt}"
+    fi
+  else
+    wordlist="${FFUF_WORDLIST:-/usr/share/wordlists/dirb/common.txt}"
+  fi
   if [[ ! -f "${wordlist}" ]]; then
     log_error "Wordlist not found at ${wordlist}"
     return 1
@@ -28,10 +39,12 @@ run_fuzzer() {
   local live_hosts_file="${OUTPUT_DIR}/live_hosts.txt"
   local ffuf_output_dir="${OUTPUT_DIR}/ffuf_json"
   local discovered_directories_file="${OUTPUT_DIR}/discovered_directories.txt"
-  local ffuf_rate="${FFUF_RATE:-30}"
-  local ffuf_threads="${FFUF_THREADS:-10}"
-  local ffuf_maxtime="${FFUF_MAXTIME:-180}"
-
+  # Profile-aware defaults.
+  local ffuf_rate ffuf_threads ffuf_maxtime
+  case "${SCAN_PROFILE:-standard}" in
+    deep) ffuf_rate="${FFUF_RATE:-50}"; ffuf_threads="${FFUF_THREADS:-20}"; ffuf_maxtime="${FFUF_MAXTIME:-300}" ;;
+    *)    ffuf_rate="${FFUF_RATE:-30}"; ffuf_threads="${FFUF_THREADS:-10}"; ffuf_maxtime="${FFUF_MAXTIME:-180}" ;;
+  esac
   mkdir -p "${ffuf_output_dir}"
   : > "${discovered_directories_file}"
 

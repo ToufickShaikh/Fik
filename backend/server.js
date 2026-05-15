@@ -23,7 +23,10 @@ const __dirname  = path.dirname(__filename);
 // Path constants
 // ---------------------------------------------------------------------------
 const BACKEND_DIR           = __dirname;
-const FRAMEWORK_DIR         = path.join(BACKEND_DIR, '..');
+// FRAMEWORK_DIR can be overridden via env so Docker containers can find main.sh
+// even though the backend image only contains /app (backend files).
+// docker-compose mounts the repo root at /framework and sets FRAMEWORK_DIR=/framework.
+const FRAMEWORK_DIR         = process.env.FRAMEWORK_DIR || path.join(BACKEND_DIR, '..');
 const DATABASE_DIR          = path.join(BACKEND_DIR, 'database');
 const TARGETS_FILE          = path.join(BACKEND_DIR, 'targets.json');
 const SETTINGS_FILE         = path.join(BACKEND_DIR, 'settings.json');
@@ -305,7 +308,7 @@ function registerCronJob(target) {
 
 function unregisterCronJob(targetId) {
   const task = cronJobs.get(targetId);
-  if (task) { task.destroy(); cronJobs.delete(targetId); }
+  if (task) { task.stop(); cronJobs.delete(targetId); }
 }
 
 async function initCronJobs() {
@@ -646,7 +649,11 @@ app.post('/api/report/generate', async (req, res, next) => {
     });
 
     return res.status(200).json({ message: 'Reports generated.', reports: await listReports() });
-  } catch (err) { return next(err); }
+  } catch (err) {
+    // Surface the actual failure (no data, bad API key, timeout) rather than a generic 500.
+    logError(`Report generation failed: ${err.message}`);
+    return res.status(503).json({ error: 'Report generation failed.', detail: err.message });
+  }
 });
 
 // ---------------------------------------------------------------------------

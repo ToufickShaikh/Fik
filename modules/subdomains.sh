@@ -25,9 +25,13 @@ run_subdomain_enumeration() {
   local assetfinder_raw="${OUTPUT_DIR}/assetfinder.txt"
   local subdomains_file="${OUTPUT_DIR}/subdomains.txt"
   local live_hosts_file="${OUTPUT_DIR}/live_hosts.txt"
-  local httpx_rate_limit="${HTTPX_RATE_LIMIT:-50}"
-  local httpx_threads="${HTTPX_THREADS:-25}"
-  local httpx_retries="${HTTPX_RETRIES:-2}"
+  # Profile-aware defaults (env vars override profile defaults via :- syntax).
+  local httpx_rate_limit httpx_threads httpx_retries
+  case "${SCAN_PROFILE:-standard}" in
+    quick) httpx_rate_limit="${HTTPX_RATE_LIMIT:-30}";  httpx_threads="${HTTPX_THREADS:-10}";  httpx_retries="${HTTPX_RETRIES:-1}" ;;
+    deep)  httpx_rate_limit="${HTTPX_RATE_LIMIT:-100}"; httpx_threads="${HTTPX_THREADS:-50}";  httpx_retries="${HTTPX_RETRIES:-3}" ;;
+    *)     httpx_rate_limit="${HTTPX_RATE_LIMIT:-50}";  httpx_threads="${HTTPX_THREADS:-25}";  httpx_retries="${HTTPX_RETRIES:-2}" ;;
+  esac
 
   log_step "Subdomain enumeration for ${TARGET_DOMAIN}"
 

@@ -18,10 +18,13 @@ run_crawler() {
   local endpoints_file="${OUTPUT_DIR}/endpoints.txt"
   local js_files_file="${OUTPUT_DIR}/js_files.txt"
   local potential_leaks_file="${OUTPUT_DIR}/potential_leaks.txt"
-  local katana_delay="${KATANA_DELAY:-3}"
-  local katana_concurrency="${KATANA_CONCURRENCY:-2}"
-  local katana_retry="${KATANA_RETRY:-3}"
-  local katana_duration="${KATANA_DURATION:-5m}"
+  # Profile-aware defaults.
+  local katana_delay katana_concurrency katana_retry katana_duration
+  case "${SCAN_PROFILE:-standard}" in
+    quick) katana_delay="${KATANA_DELAY:-3}"; katana_concurrency="${KATANA_CONCURRENCY:-2}"; katana_retry="${KATANA_RETRY:-2}"; katana_duration="${KATANA_DURATION:-3m}"  ;;
+    deep)  katana_delay="${KATANA_DELAY:-1}"; katana_concurrency="${KATANA_CONCURRENCY:-5}"; katana_retry="${KATANA_RETRY:-3}"; katana_duration="${KATANA_DURATION:-15m}" ;;
+    *)     katana_delay="${KATANA_DELAY:-3}"; katana_concurrency="${KATANA_CONCURRENCY:-2}"; katana_retry="${KATANA_RETRY:-3}"; katana_duration="${KATANA_DURATION:-5m}"  ;;
+  esac
 
   log_step "Crawler"
   log_info "Input live hosts file: ${live_hosts_file}"
