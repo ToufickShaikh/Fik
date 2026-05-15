@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = ''; // relative — Vite proxies /api → localhost:3000
 
 const FIELDS = [
   {
@@ -52,7 +52,7 @@ const FIELDS = [
   },
 ];
 
-export default function SettingsPanel() {
+export default function SettingsPanel({ onClose }) {
   const [values, setValues]   = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -110,7 +110,18 @@ export default function SettingsPanel() {
 
   return (
     <article className="rounded-2xl border border-slate-700/70 bg-slate-900/70 p-5 shadow-lg shadow-black/25">
-      <h2 className="mb-5 text-lg font-semibold text-slate-50">Settings</h2>
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold text-slate-50">Settings</h2>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-600/60 px-2.5 py-1 text-xs text-slate-400 hover:border-slate-500 hover:text-slate-200 transition-colors"
+          >
+            Close
+          </button>
+        )}
+      </div>
 
       {error && (
         <p className="mb-4 rounded-xl border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</p>

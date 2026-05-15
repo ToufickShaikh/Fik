@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 
-const API_BASE = 'http://localhost:3000';
+const API_BASE = ''; // relative — Vite proxies /api → localhost:3000
 
 const EMPTY_FORM = { domain: '', includeScope: '', excludeScope: '', notes: '' };
 

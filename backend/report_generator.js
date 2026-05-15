@@ -1,6 +1,11 @@
-const fs = require('fs/promises');
-const path = require('path');
-const dotenv = require('dotenv');
+import fs from 'fs/promises';
+import path from 'path';
+import dotenv from 'dotenv';
+import { GoogleGenAI } from '@google/genai';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '.env') });
 
@@ -190,7 +195,6 @@ async function main() {
     return;
   }
 
-  const { GoogleGenAI } = await import('@google/genai');
   const aiClient = new GoogleGenAI({ apiKey });
 
   const usedPaths = new Set();

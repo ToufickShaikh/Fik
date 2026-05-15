@@ -1,11 +1,15 @@
-const express = require('express');
-const cors = require('cors');
-const fs = require('fs/promises');
-const http = require('http');
-const path = require('path');
-const { spawn } = require('child_process');
-const { WebSocketServer } = require('ws');
-const cron = require('node-cron');
+import express from 'express';
+import cors from 'cors';
+import fs from 'fs/promises';
+import http from 'http';
+import path from 'path';
+import { spawn } from 'child_process';
+import { WebSocketServer } from 'ws';
+import cron from 'node-cron';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname  = path.dirname(__filename);
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);

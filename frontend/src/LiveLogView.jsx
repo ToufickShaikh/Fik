@@ -1,7 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-const WS_URL = 'ws://localhost:3000/ws/logs';
-const API_BASE = 'http://localhost:3000';
+// Derive the WebSocket URL from the current page origin so Vite's /ws proxy
+// works in dev and a reverse-proxy works in production without changes.
+function makeWsUrl(path) {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}${path}`;
+}
+
+const API_BASE = ''; // relative — Vite proxies /api → localhost:3000
 
 // Strip ANSI/VT100 escape sequences so terminal colors don't appear as raw
 // escape codes in the browser. The bash log_* functions in _lib.sh emit them.
@@ -68,7 +74,7 @@ export default function LiveLogView({ initialDomain }) {
   const connect = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState < 2) return;
 
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(makeWsUrl('/ws/logs'));
     wsRef.current = ws;
 
     ws.onopen = () => {

@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-const WS_URL = 'ws://localhost:3000/ws/logs';
+function makeWsUrl(path) {
+  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+  return `${proto}://${window.location.host}${path}`;
+}
 
 // ---------------------------------------------------------------------------
 // GaugeBar — compact horizontal progress bar with colour-coded thresholds.
@@ -58,7 +61,7 @@ export default function ResourceMonitor() {
   const connect = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState < 2) return;
 
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(makeWsUrl('/ws/logs'));
     wsRef.current = ws;
 
     ws.onopen  = () => setWsReady(true);
