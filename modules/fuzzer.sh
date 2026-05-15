@@ -32,8 +32,57 @@ run_fuzzer() {
     wordlist="${FFUF_WORDLIST:-/usr/share/wordlists/dirb/common.txt}"
   fi
   if [[ ! -f "${wordlist}" ]]; then
-    log_error "Wordlist not found at ${wordlist}"
-    return 1
+    log_warn "Wordlist not found at ${wordlist}. Trying to install dirb/wordlists via apt..."
+    if command -v apt-get >/dev/null 2>&1; then
+      local _sudo=""
+      command -v sudo >/dev/null 2>&1 && [[ "${EUID}" -ne 0 ]] && _sudo="sudo"
+      ${_sudo} apt-get install -y --no-install-recommends dirb >/dev/null 2>&1 || \
+        ${_sudo} apt-get install -y --no-install-recommends wordlists >/dev/null 2>&1 || true
+    fi
+    if [[ ! -f "${wordlist}" ]]; then
+      # Last resort: generate a minimal built-in wordlist so ffuf can still run.
+      local _builtin_wl="${OUTPUT_DIR}/builtin_wordlist.txt"
+      log_warn "Generating minimal built-in wordlist at ${_builtin_wl}"
+      cat > "${_builtin_wl}" <<'WORDLIST'
+admin
+administrator
+api
+backup
+config
+dashboard
+data
+debug
+dev
+docs
+download
+env
+files
+health
+img
+index
+js
+login
+logs
+metrics
+phpinfo
+robots.txt
+secret
+setup
+status
+swagger
+test
+upload
+v1
+v2
+wp-admin
+wp-login.php
+.git
+.env
+.htaccess
+sitemap.xml
+WORDLIST
+      wordlist="${_builtin_wl}"
+    fi
   fi
 
   local live_hosts_file="${OUTPUT_DIR}/live_hosts.txt"

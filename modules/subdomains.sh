@@ -14,12 +14,15 @@ run_subdomain_enumeration() {
     return 1
   fi
 
-  for required_tool in subfinder assetfinder httpx; do
+  for required_tool in subfinder httpx; do
     if ! command -v "${required_tool}" >/dev/null 2>&1; then
       log_error "Missing required tool: ${required_tool}"
       return 1
     fi
   done
+  # assetfinder is optional — subfinder alone still produces good results.
+  local have_assetfinder=false
+  command -v assetfinder >/dev/null 2>&1 && have_assetfinder=true
 
   local subfinder_raw="${OUTPUT_DIR}/subfinder.txt"
   local assetfinder_raw="${OUTPUT_DIR}/assetfinder.txt"
@@ -40,7 +43,11 @@ run_subdomain_enumeration() {
   : > "${assetfinder_raw}"
 
   run_tool "subfinder" subfinder -silent -d "${TARGET_DOMAIN}" -o "${subfinder_raw}" || true
-  run_tool "assetfinder" bash -c "assetfinder --subs-only '${TARGET_DOMAIN}' > '${assetfinder_raw}'" || true
+  if [[ "${have_assetfinder}" == true ]]; then
+    run_tool "assetfinder" bash -c "assetfinder --subs-only '${TARGET_DOMAIN}' > '${assetfinder_raw}'" || true
+  else
+    log_warn "assetfinder not available; skipping (subfinder results still used)."
+  fi
 
   log_info "Combining, injecting root domain, and deduplicating"
   {
