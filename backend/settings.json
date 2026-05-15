@@ -1,0 +1,8 @@
+{
+  "geminiApiKey": "",
+  "proxyUrl": "",
+  "defaultConcurrency": 75,
+  "nucleiConcurrency": 25,
+  "swapFileSizeGB": 2,
+  "enableSwapOnLowMem": true
+}

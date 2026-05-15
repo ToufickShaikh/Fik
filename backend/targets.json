@@ -1,0 +1,30 @@
+[
+  {
+    "id": "1778810891403-2zw8bh",
+    "domain": "hackerone.com",
+    "includeScope": "",
+    "excludeScope": "",
+    "notes": "updated",
+    "createdAt": "2026-05-15T02:08:11.403Z",
+    "updatedAt": "2026-05-15T02:08:11.492Z"
+  },
+  {
+    "id": "1778811041713-t2gh1g",
+    "domain": "hackerone.com",
+    "includeScope": "",
+    "excludeScope": "",
+    "notes": "updated",
+    "createdAt": "2026-05-15T02:10:41.713Z",
+    "updatedAt": "2026-05-15T02:10:41.922Z",
+    "schedule": "0 3 * * *"
+  },
+  {
+    "id": "1778811063924-m84f9w",
+    "domain": "bugcrowd.com",
+    "includeScope": "",
+    "excludeScope": "",
+    "notes": "x",
+    "createdAt": "2026-05-15T02:11:03.924Z",
+    "updatedAt": "2026-05-15T02:11:03.979Z"
+  }
+]
