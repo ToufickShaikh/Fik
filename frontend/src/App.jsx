@@ -1,4 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import LiveLogView from './LiveLogView';
+import ResourceMonitor from './components/ResourceMonitor';
+import SettingsPanel from './components/SettingsPanel';
+import TargetManager from './components/TargetManager';
 
 const API_URL = 'http://localhost:3000/api/data';
 
@@ -100,6 +104,8 @@ export default function App() {
   const [data, setData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedDomain, setSelectedDomain] = useState(null);
+  const [showSettings, setShowSettings] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -186,12 +192,46 @@ export default function App() {
 
       <section className="relative mx-auto w-full max-w-7xl px-4 py-10 md:px-8">
         <header className="mb-8 rounded-3xl border border-slate-700/70 bg-slate-900/70 p-6 shadow-2xl shadow-black/35 backdrop-blur">
-          <p className="text-sm uppercase tracking-[0.22em] text-cyan-300">Bug Bounty Dashboard</p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 md:text-4xl">Live Recon Intelligence</h1>
-          <p className="mt-2 text-sm text-slate-300 md:text-base">
-            Target: <span className="font-semibold text-orange-300">{normalized.target}</span>
-          </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm uppercase tracking-[0.22em] text-cyan-300">Bug Bounty Dashboard</p>
+              <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-50 md:text-4xl">Live Recon Intelligence</h1>
+              <p className="mt-2 text-sm text-slate-300 md:text-base">
+                Target: <span className="font-semibold text-orange-300">{normalized.target}</span>
+              </p>
+            </div>
+            <button
+              onClick={() => setShowSettings((v) => !v)}
+              className={`mt-1 shrink-0 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                showSettings ? 'border-cyan-500 bg-cyan-900/30 text-cyan-300' : 'border-slate-600 text-slate-400 hover:border-slate-400'
+              }`}
+            >
+              Settings
+            </button>
+          </div>
         </header>
+
+        {/* Settings panel */}
+        {showSettings && (
+          <section className="mb-8">
+            <SettingsPanel />
+          </section>
+        )}
+
+        {/* ── Resource Sentinel ─────────────────────────────────────────── */}
+        <section className="mb-8">
+          <ResourceMonitor />
+        </section>
+
+        {/* ── Target Management ────────────────────────────────────────── */}
+        <section className="mb-8">
+          <TargetManager onSelectTarget={setSelectedDomain} />
+        </section>
+
+        {/* ── Scan Console (always visible) ─────────────────────────────── */}
+        <section className="mb-8">
+          <LiveLogView initialDomain={selectedDomain} />
+        </section>
 
         {isLoading ? (
           <LoadingSkeleton />

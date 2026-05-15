@@ -14,6 +14,9 @@ source "${MODULES_DIR}/_lib.sh"
 
 TARGET_DOMAIN=""
 OUTPUT_DIR=""
+# SCAN_PROFILE can be set via env (from the GUI/backend) or overridden with -p.
+# Valid values: quick | standard | deep  (Step 3 wires these to tool flags).
+SCAN_PROFILE="${SCAN_PROFILE:-standard}"
 
 # Cleanup trap: removes registered temp paths on any exit (success, error, or
 # manual abort via Ctrl-C). cleanup_tempfiles is defined in modules/_lib.sh.
@@ -71,10 +74,14 @@ run_module_function() {
   fi
 }
 
-while getopts ":d:h" opt; do
+while getopts ":d:p:h" opt; do
   case "${opt}" in
     d)
       TARGET_DOMAIN="${OPTARG}"
+      ;;
+    p)
+      SCAN_PROFILE="${OPTARG}"
+      ;;
       ;;
     h)
       print_help
@@ -104,18 +111,21 @@ safe_domain="${TARGET_DOMAIN//[^a-zA-Z0-9._-]/_}"
 OUTPUT_DIR="${RESULTS_DIR}/${safe_domain}_${timestamp}"
 mkdir -p "${OUTPUT_DIR}"
 
-export TARGET_DOMAIN OUTPUT_DIR
+export TARGET_DOMAIN OUTPUT_DIR SCAN_PROFILE
 
 log_step "Fik bug-bounty framework starting"
 log_info "Target domain : ${TARGET_DOMAIN}"
+log_info "Scan profile  : ${SCAN_PROFILE}"
 log_info "Output folder : ${OUTPUT_DIR}"
 
 MODULE_FILES=(
+  "self_healing.sh"
   "install_tools.sh"
   "subdomains.sh"
   "portscan.sh"
   "crawler.sh"
   "fuzzer.sh"
+  "tech_detector.sh"
   "vulnscan.sh"
   "exporter.sh"
 )
@@ -125,6 +135,7 @@ MODULE_FUNCTIONS=(
   "run_port_scan"
   "run_crawler"
   "run_fuzzer"
+  "detect_technologies"
   "run_vulnerability_scan"
   "export_to_json"
 )

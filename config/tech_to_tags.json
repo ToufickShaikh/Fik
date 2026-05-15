@@ -1,0 +1,23 @@
+{
+  "wordpress":   ["wordpress", "cve", "exposure"],
+  "laravel":     ["laravel", "cve"],
+  "react":       ["react", "xss"],
+  "angular":     ["angular", "xss"],
+  "vue":         ["vue", "xss"],
+  "django":      ["django", "python", "cve"],
+  "flask":       ["flask", "python", "exposure"],
+  "rails":       ["rails", "ruby", "cve"],
+  "express":     ["nodejs", "exposure"],
+  "nginx":       ["nginx", "misconfiguration", "exposure"],
+  "apache":      ["apache", "cve", "misconfiguration"],
+  "tomcat":      ["apache", "tomcat", "cve", "exposure"],
+  "jira":        ["jira", "cve", "exposure"],
+  "jenkins":     ["jenkins", "cve", "exposure", "misconfig"],
+  "grafana":     ["grafana", "cve", "exposure"],
+  "php":         ["php", "cve"],
+  "drupal":      ["drupal", "cve"],
+  "jquery":      ["xss"],
+  "spring":      ["spring", "java", "cve"],
+  "iis":         ["iis", "misconfiguration", "exposure"],
+  "unknown":     ["cve", "exposure"]
+}

@@ -21,10 +21,14 @@ run_vulnerability_scan() {
   local nuclei_bulk_size="${NUCLEI_BULK_SIZE:-10}"
   local nuclei_retries="${NUCLEI_RETRIES:-2}"
   local nuclei_concurrency="${NUCLEI_CONCURRENCY:-10}"
+  # NUCLEI_TAGS is set by detect_technologies() (tech_detector.sh). Fall back
+  # to a broad default so the scan always produces useful output.
+  local effective_tags="${NUCLEI_TAGS:-cve,exposure}"
 
   log_step "Vulnerability scan (nuclei)"
   log_info "Input file : ${live_hosts_file}"
   log_info "Rate-limit : ${nuclei_rate_limit} req/s, bulk ${nuclei_bulk_size}, retries ${nuclei_retries}"
+  log_info "Tags       : ${effective_tags}"
 
   if [[ ! -s "${live_hosts_file}" ]]; then
     log_warn "No live hosts available. Writing empty vulnerability output files."
@@ -40,6 +44,7 @@ run_vulnerability_scan() {
     -bulk-size "${nuclei_bulk_size}" \
     -c "${nuclei_concurrency}" \
     -retries "${nuclei_retries}" \
+    -tags "${effective_tags}" \
     -o "${vulnerabilities_jsonl_file}" || true
 
   if command -v jq >/dev/null 2>&1 && [[ -s "${vulnerabilities_jsonl_file}" ]]; then
