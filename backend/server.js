@@ -6,6 +6,7 @@
 import express from 'express';
 import cors from 'cors';
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import http from 'http';
 import path from 'path';
 import { spawn } from 'child_process';
@@ -28,6 +29,19 @@ const BACKEND_DIR           = __dirname;
 // docker-compose mounts the repo root at /framework and sets FRAMEWORK_DIR=/framework.
 const FRAMEWORK_DIR         = process.env.FRAMEWORK_DIR || path.join(BACKEND_DIR, '..');
 const DATABASE_DIR          = path.join(BACKEND_DIR, 'database');
+
+// Resolve bash at startup — works on Linux (/bin/bash or /usr/bin/bash),
+// macOS, and Windows Git-bash/WSL. Falls back to 'bash' (relies on PATH).
+const BASH_PATH = (() => {
+  const candidates = ['/bin/bash', '/usr/bin/bash', '/usr/local/bin/bash'];
+  for (const c of candidates) {
+    try {
+      const st = fsSync.statSync(c);
+      if (st.isFile()) return c;
+    } catch { /**/ }
+  }
+  return 'bash'; // last resort: rely on PATH
+})();
 const TARGETS_FILE          = path.join(BACKEND_DIR, 'targets.json');
 const SETTINGS_FILE         = path.join(BACKEND_DIR, 'settings.json');
 const REPORTS_DIR           = path.join(BACKEND_DIR, 'reports');
@@ -248,7 +262,7 @@ async function triggerScan(domain, profile = 'standard') {
   const settings   = await loadSettings();
   const scriptPath = path.join(FRAMEWORK_DIR, 'main.sh');
 
-  const child = spawn('bash', [scriptPath, '-d', domain, '-p', profile], {
+  const child = spawn(BASH_PATH, [scriptPath, '-d', domain, '-p', profile], {
     cwd:      FRAMEWORK_DIR,
     env:      buildScanEnv(settings, profile),
     stdio:    ['ignore', 'pipe', 'pipe'],
@@ -553,7 +567,7 @@ app.get('/api/tech/:domain', async (req, res, next) => {
     // Run tech_detector.sh with a 30 s safety timeout.
     const rawOutput = await new Promise((resolve) => {
       let out = '';
-      const child = spawn('bash', [techScript, domain], {
+      const child = spawn(BASH_PATH, [techScript, domain], {
         cwd:   FRAMEWORK_DIR,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
