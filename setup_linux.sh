@@ -103,24 +103,48 @@ if [[ "${IS_PODMAN}" == "true" ]]; then
     print_error_and_exit "systemctl is required to start podman.socket but was not found."
   fi
 
-  echo "[INFO] Enabling Podman socket: systemctl enable --now podman.socket"
   if [[ "${EUID}" -eq 0 ]]; then
+    # Running as root — use the system-wide socket
+    PODMAN_SOCK="/run/podman/podman.sock"
+    echo "[INFO] Enabling system Podman socket: systemctl enable --now podman.socket"
     systemctl enable --now podman.socket
   else
-    if ! command -v sudo >/dev/null 2>&1; then
-      print_error_and_exit "sudo is required to enable podman.socket for non-root users."
+    # Running as a normal user — rootless Podman uses a per-user socket under XDG_RUNTIME_DIR
+    _UID="$(id -u)"
+    _XDG="${XDG_RUNTIME_DIR:-/run/user/${_UID}}"
+    PODMAN_SOCK="${_XDG}/podman/podman.sock"
+    echo "[INFO] Enabling rootless Podman socket: systemctl --user enable --now podman.socket"
+    if systemctl --user enable --now podman.socket 2>/dev/null; then
+      echo "[OK] Rootless podman.socket enabled."
+    else
+      # Fallback: system socket via sudo (less common but some distros need it)
+      echo "[WARN] systemctl --user failed — falling back to sudo systemctl enable --now podman.socket"
+      if ! command -v sudo >/dev/null 2>&1; then
+        print_error_and_exit "sudo is required as systemctl --user was unavailable."
+      fi
+      sudo systemctl enable --now podman.socket
+      PODMAN_SOCK="/run/podman/podman.sock"
     fi
-    sudo systemctl enable --now podman.socket
   fi
 
-  export DOCKER_HOST="unix:///run/podman/podman.sock"
+  export DOCKER_HOST="unix://${PODMAN_SOCK}"
   echo "[OK] DOCKER_HOST set to ${DOCKER_HOST}"
 
-  if [[ ! -S "/run/podman/podman.sock" ]]; then
-    print_error_and_exit "Podman socket not found at /run/podman/podman.sock after enable/start."
+  if [[ ! -S "${PODMAN_SOCK}" ]]; then
+    echo "[WARN] Socket not found at ${PODMAN_SOCK}. Waiting up to 5 seconds..."
+    for _i in 1 2 3 4 5; do
+      sleep 1
+      [[ -S "${PODMAN_SOCK}" ]] && break
+    done
+    if [[ ! -S "${PODMAN_SOCK}" ]]; then
+      print_error_and_exit "Podman socket not found at ${PODMAN_SOCK} after enable/start.
+For rootless Podman, ensure loginctl enable-linger ${CURRENT_USER} is set so
+user systemd services can run. Run: sudo loginctl enable-linger ${CURRENT_USER}
+then re-run this script."
+    fi
   fi
 
-  if [[ "${EUID}" -ne 0 && ! -w "/run/podman/podman.sock" ]]; then
+  if [[ "${EUID}" -ne 0 && ! -w "${PODMAN_SOCK}" ]]; then
     USE_SUDO_FOR_COMPOSE=true
     echo "[WARN] Socket is not writable by current user. docker compose will run with sudo."
   fi
