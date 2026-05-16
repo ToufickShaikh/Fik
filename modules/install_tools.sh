@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # install_tools.sh — Multi-strategy tool installer for Fik.
 #
 # Strategy per tool (first success wins):
