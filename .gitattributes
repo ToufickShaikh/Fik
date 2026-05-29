@@ -1,0 +1,20 @@
+# Force LF and forbid BOM on every shell script regardless of host OS.
+# Without this, Windows checkouts can ship CRLF or a UTF-8 BOM, which makes
+# Linux refuse to execute the script ("/usr/bin/env: No such file or directory").
+*.sh           text eol=lf working-tree-encoding=UTF-8
+*.bash         text eol=lf working-tree-encoding=UTF-8
+Dockerfile     text eol=lf
+*.yml          text eol=lf
+*.yaml         text eol=lf
+*.json         text eol=lf
+*.js           text eol=lf
+*.jsx          text eol=lf
+*.css          text eol=lf
+*.html         text eol=lf
+*.md           text eol=lf
+
+# Binary safety
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.zip  binary

@@ -126,6 +126,7 @@ MODULE_FILES=(
   "fuzzer.sh"
   "tech_detector.sh"
   "vulnscan.sh"
+  "wayback.sh"
   "exporter.sh"
 )
 
@@ -136,6 +137,7 @@ MODULE_FUNCTIONS=(
   "run_fuzzer"
   "detect_technologies"
   "run_vulnerability_scan"
+  "run_wayback_recon"
   "export_to_json"
 )
 
@@ -145,7 +147,7 @@ MODULE_FUNCTIONS=(
 _filtered_functions=()
 for _fn in "${MODULE_FUNCTIONS[@]}"; do
   if [[ "${SCAN_PROFILE}" == "quick" ]] && \
-     [[ "${_fn}" == "run_crawler" || "${_fn}" == "run_fuzzer" ]]; then
+     [[ "${_fn}" == "run_crawler" || "${_fn}" == "run_fuzzer" || "${_fn}" == "run_wayback_recon" ]]; then
     log_info "Profile '${SCAN_PROFILE}': skipping ${_fn}"
     continue
   fi

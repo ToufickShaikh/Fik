@@ -39,6 +39,7 @@ _TOOL_SPECS=(
   "katana|katana|projectdiscovery|katana|github.com/projectdiscovery/katana/cmd/katana@latest"
   "ffuf|ffuf|ffuf|ffuf|github.com/ffuf/ffuf/v2@latest"
   "assetfinder|assetfinder|tomnomnom|assetfinder|github.com/tomnomnom/assetfinder@latest"
+  "waybackurls|waybackurls|tomnomnom|waybackurls|github.com/tomnomnom/waybackurls@latest"
   "jq|jq|||"
   "unzip|unzip|||"
   "curl|curl|||"

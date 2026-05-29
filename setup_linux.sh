@@ -170,12 +170,21 @@ chmod +x "${ROOT_DIR}"/modules/*.sh
 chmod +x "${ROOT_DIR}/setup_linux.sh"
 echo "[OK] Executable permissions set for main.sh and modules/*.sh"
 
-print_banner "[STEP 7/8] Converting CRLF to LF in all shell scripts"
+print_banner "[STEP 7/8] Normalizing shell scripts (strip UTF-8 BOM + CRLF -> LF)"
+# Windows editors (and some git checkouts via core.autocrlf=true or
+# working-tree-encoding) can introduce a UTF-8 BOM (EF BB BF) before the
+# shebang. Linux treats the BOM as part of the interpreter path, producing:
+#   "/usr/bin/env: No such file or directory"  (exit 127)
+# We strip BOM AND CRLF on every *.sh file before launching containers so the
+# read-only bind-mount in docker-compose.yml exposes clean scripts.
 while IFS= read -r sh_file; do
+  # 1) Remove UTF-8 BOM if present on line 1
+  sed -i '1s/^\xEF\xBB\xBF//' "${sh_file}"
+  # 2) Remove trailing CR from every line
   sed -i 's/\r$//' "${sh_file}"
   echo "[FIXED] ${sh_file}"
 done < <(find "${ROOT_DIR}" -type f -name "*.sh")
-echo "[OK] Line ending normalization complete"
+echo "[OK] Line ending + BOM normalization complete"
 
 print_banner "[STEP 8/8] Starting container services"
 cd "${ROOT_DIR}"
