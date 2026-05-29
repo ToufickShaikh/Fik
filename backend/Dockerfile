@@ -34,7 +34,6 @@ ENV PD_SUBFINDER=2.6.6 \
     PD_NAABU=2.3.2 \
     PD_NUCLEI=3.3.5 \
     PD_KATANA=1.1.0 \
-    PD_NOTIFY=1.0.9 \
     FFUF_VER=2.1.0 \
     TRUFFLEHOG_VER=3.82.13 \
     GITLEAKS_VER=8.21.2
@@ -58,7 +57,7 @@ RUN set -ux; \
     install_pd_zip naabu     "$PD_NAABU"; \
     install_pd_zip nuclei    "$PD_NUCLEI"; \
     install_pd_zip katana    "$PD_KATANA"; \
-    install_pd_zip notify    "$PD_NOTIFY"; \
+    # notify is installed via `go install` below (PD removed old release tags) \
     # ffuf (tar.gz)
     if dl "https://github.com/ffuf/ffuf/releases/download/v${FFUF_VER}/ffuf_${FFUF_VER}_linux_${arch}.tar.gz" ffuf.tgz; then \
       mkdir -p ffuf-x && tar -xzf ffuf.tgz -C ffuf-x \
@@ -77,7 +76,7 @@ RUN set -ux; \
     rm -rf /tmp/install/* ; \
     # Summary
     echo "=== Installed tool versions ==="; \
-    for t in subfinder httpx naabu nuclei katana notify ffuf trufflehog gitleaks; do \
+    for t in subfinder httpx naabu nuclei katana ffuf trufflehog gitleaks; do \
       if command -v "$t" >/dev/null 2>&1; then \
         echo "  [OK] $t"; \
       else \
@@ -99,7 +98,14 @@ RUN set -ux; \
 # ---- 3. Go-installable tools (Tomnomnom + community) ------------------------
 # Each `go install` is isolated with `|| true` so a single transient failure
 # (network, removed module) doesn't abort the build.
+#
+# IMPORTANT: gowitness now requires Go 1.26+, so Go's auto-toolchain feature
+# will download an extra SDK (~400 MB) into /root/sdk and the module cache
+# can hit 2+ GB. We wipe both at the end of this layer so the image stays
+# under 2 GB and slow disks don't fail with ENOSPC mid-build.
 ENV GOPATH=/root/go \
+    GOMODCACHE=/root/go/pkg/mod \
+    GOCACHE=/root/.cache/go-build \
     PATH=/root/go/bin:/usr/local/go/bin:${PATH}
 RUN set -ux; \
     for pkg in \
@@ -112,13 +118,17 @@ RUN set -ux; \
         github.com/d3mondev/puredns/v2@latest \
         github.com/projectdiscovery/shuffledns/cmd/shuffledns@latest \
         github.com/sensepost/gowitness@latest \
+        github.com/projectdiscovery/notify/cmd/notify@latest \
     ; do \
       echo "[go install] $pkg"; \
       go install "$pkg" || echo "[BUILD-WARN] go install failed for $pkg"; \
     done; \
     if [ -d /root/go/bin ]; then cp -f /root/go/bin/* /usr/local/bin/ 2>/dev/null || true; fi; \
+    # Aggressive cleanup so the layer fits on small disks
+    go clean -cache -modcache -testcache 2>/dev/null || true; \
+    rm -rf /root/sdk /root/.cache/go-build /root/go/pkg /tmp/*; \
     echo "=== Go tools installed ==="; \
-    for t in assetfinder waybackurls gf gau subjs subzy puredns shuffledns gowitness; do \
+    for t in assetfinder waybackurls gf gau subjs subzy puredns shuffledns gowitness notify; do \
       if command -v "$t" >/dev/null 2>&1; then echo "  [OK] $t"; else echo "  [MISSING] $t"; fi; \
     done; \
     true
