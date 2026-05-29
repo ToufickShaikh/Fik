@@ -12,11 +12,16 @@ services:
     environment:
       # Mount the repo root at /framework so main.sh and modules/ are accessible.
       - FRAMEWORK_DIR=/framework
+      # Optional: webhook for HIGH/CRITICAL findings (Slack/Discord/Telegram).
+      # Set in your shell or backend/.env to enable notify.sh.
+      - NOTIFY_WEBHOOK_URL=${NOTIFY_WEBHOOK_URL:-}
+      - NOTIFY_WEBHOOK_TYPE=${NOTIFY_WEBHOOK_TYPE:-slack}
     volumes:
       - ./:/framework:ro            # whole repo read-only (bash scripts + config)
       - ./results:/framework/results # writable results dir for scan outputs
       - ./backend/database:/app/database
       - ./backend/reports:/app/reports
+      - ./backend/targets.json:/framework/backend/targets.json:ro  # scope source
     restart: unless-stopped
 
   frontend:

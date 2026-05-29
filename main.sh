@@ -120,41 +120,70 @@ log_info "Output folder : ${OUTPUT_DIR}"
 MODULE_FILES=(
   "self_healing.sh"
   "install_tools.sh"
+  "scope.sh"
   "subdomains.sh"
+  "dnsbrute.sh"
   "portscan.sh"
   "crawler.sh"
   "fuzzer.sh"
   "tech_detector.sh"
   "vulnscan.sh"
   "wayback.sh"
+  "jsendpoints.sh"
+  "takeover.sh"
+  "secrets.sh"
+  "gf_triage.sh"
+  "screenshots.sh"
+  "cors.sh"
   "exporter.sh"
+  "diff.sh"
+  "notify.sh"
 )
 
 MODULE_FUNCTIONS=(
+  "load_scope"
   "run_subdomain_enumeration"
+  "run_dns_brute"
   "run_port_scan"
   "run_crawler"
   "run_fuzzer"
   "detect_technologies"
   "run_vulnerability_scan"
   "run_wayback_recon"
+  "run_js_endpoints"
+  "run_subdomain_takeover"
+  "run_secret_scan"
+  "run_gf_triage"
+  "run_screenshots"
+  "run_cors_check"
   "export_to_json"
+  "run_diff_against_previous"
+  "run_notifications"
 )
 
 # Filter module list based on scan profile.
-# quick → skip crawler and fuzzer for speed
-# deep  → run everything (full chain)
+# quick    → recon only (no crawl/fuzz/wayback/JS/secrets/screenshots/brute)
+# standard → balanced (skips deep brute + screenshots)
+# deep     → run absolutely everything
 _filtered_functions=()
+_QUICK_SKIP=( run_crawler run_fuzzer run_wayback_recon run_js_endpoints \
+              run_secret_scan run_gf_triage run_screenshots run_dns_brute )
+_STD_SKIP=( run_dns_brute run_screenshots )
 for _fn in "${MODULE_FUNCTIONS[@]}"; do
-  if [[ "${SCAN_PROFILE}" == "quick" ]] && \
-     [[ "${_fn}" == "run_crawler" || "${_fn}" == "run_fuzzer" || "${_fn}" == "run_wayback_recon" ]]; then
+  _skip=0
+  if [[ "${SCAN_PROFILE}" == "quick" ]]; then
+    for _s in "${_QUICK_SKIP[@]}"; do [[ "${_fn}" == "${_s}" ]] && _skip=1 && break; done
+  elif [[ "${SCAN_PROFILE}" == "standard" ]]; then
+    for _s in "${_STD_SKIP[@]}"; do [[ "${_fn}" == "${_s}" ]] && _skip=1 && break; done
+  fi
+  if (( _skip == 1 )); then
     log_info "Profile '${SCAN_PROFILE}': skipping ${_fn}"
     continue
   fi
   _filtered_functions+=("${_fn}")
 done
 MODULE_FUNCTIONS=( "${_filtered_functions[@]}" )
-unset _filtered_functions _fn
+unset _filtered_functions _fn _skip _s _QUICK_SKIP _STD_SKIP
 
 for module_file in "${MODULE_FILES[@]}"; do
   source_module "${module_file}"

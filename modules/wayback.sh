@@ -71,6 +71,10 @@ run_wayback_recon() {
   fi
 
   sort -u -o "${raw}" "${raw}"
+  # Apply scope filter if loaded (out-of-scope hosts dropped).
+  if declare -F scope_filter >/dev/null 2>&1; then
+    scope_filter < "${raw}" > "${raw}.scoped" && mv "${raw}.scoped" "${raw}"
+  fi
   log_info "Raw archived URLs: $(wc -l < "${raw}" | tr -d ' ')"
 
   if [[ ! -s "${raw}" ]]; then
