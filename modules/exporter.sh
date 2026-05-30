@@ -44,32 +44,59 @@ export_to_json() {
     | sed '/^[[:space:]]*$/d' \
     | sort -u > "${combined_live_services_file}"
 
-  local subdomains_json live_services_json vulnerabilities_json
-
+  local subdomains_json live_services_json
   subdomains_json="$(jq -Rn '[inputs | select(length > 0)]' < "${subdomains_file}")"
   live_services_json="$(jq -Rn '[inputs | select(length > 0)]' < "${combined_live_services_file}")"
 
+  local max_scan_results_vulns="${MAX_SCAN_RESULTS_VULNS:-20000}"
+  local total_vulns=0
   if [[ -s "${nuclei_jsonl_file}" ]]; then
-    vulnerabilities_json="$(jq -cs '.' "${nuclei_jsonl_file}")"
-  else
-    vulnerabilities_json='[]'
+    total_vulns="$(grep -cve '^[[:space:]]*$' "${nuclei_jsonl_file}" 2>/dev/null || echo 0)"
+    if [[ "${max_scan_results_vulns}" =~ ^[0-9]+$ ]] && (( max_scan_results_vulns > 0 )) && (( total_vulns > max_scan_results_vulns )); then
+      log_warn "Trimming scan_results.json to first ${max_scan_results_vulns}/${total_vulns} vulnerability objects. Full raw file retained at ${nuclei_jsonl_file}."
+    fi
   fi
 
   log_info "Writing consolidated scan_results.json"
-  jq -n \
-    --arg target_domain "${TARGET_DOMAIN}" \
-    --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --argjson subdomains "${subdomains_json}" \
-    --argjson live_services "${live_services_json}" \
-    --argjson vulnerability_objects "${vulnerabilities_json}" \
-    '{
-      ($target_domain): {
-        generated_at: $generated_at,
-        subdomains: $subdomains,
-        live_services: $live_services,
-        vulnerability_objects: $vulnerability_objects
-      }
-    }' > "${output_json_file}"
+  if [[ -s "${nuclei_jsonl_file}" ]]; then
+    {
+      printf '{\n  "%s": {\n' "${TARGET_DOMAIN}"
+      printf '    "generated_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '    "subdomains": %s,\n' "${subdomains_json}"
+      printf '    "live_services": %s,\n' "${live_services_json}"
+      printf '    "vulnerability_objects": [\n'
+
+      local vuln_count=0
+      while IFS= read -r line; do
+        [[ -z "${line}" ]] && continue
+        if (( vuln_count > 0 )); then
+          printf ',\n'
+        fi
+        printf '%s' "${line}"
+        vuln_count=$((vuln_count + 1))
+        if [[ "${max_scan_results_vulns}" =~ ^[0-9]+$ ]] && (( max_scan_results_vulns > 0 )) && (( vuln_count >= max_scan_results_vulns )); then
+          break
+        fi
+      done < "${nuclei_jsonl_file}"
+
+      printf '\n    ]\n  }\n}\n'
+    } > "${output_json_file}"
+  else
+    jq -n \
+      --arg target_domain "${TARGET_DOMAIN}" \
+      --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --argjson subdomains "${subdomains_json}" \
+      --argjson live_services "${live_services_json}" \
+      --argjson vulnerability_objects '[]' \
+      '{
+        ($target_domain): {
+          generated_at: $generated_at,
+          subdomains: $subdomains,
+          live_services: $live_services,
+          vulnerability_objects: $vulnerability_objects
+        }
+      }' > "${output_json_file}"
+  fi
 
   log_success "JSON export saved to ${output_json_file}"
 }
