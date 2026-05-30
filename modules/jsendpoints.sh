@@ -54,5 +54,18 @@ run_js_endpoints() {
     [[ -s "${OUTPUT_DIR}/wayback_urls_raw.txt" ]] && cat "${OUTPUT_DIR}/wayback_urls_raw.txt"
   } 2>/dev/null | sed '/^[[:space:]]*$/d' | sort -u > "${out_combined}"
 
+  # Cap the combined corpus. Downstream gf_triage / nuclei replay don't
+  # benefit from chewing on a 5M-row file — most signal is in the first
+  # ~100k unique URLs. Override via MAX_ALL_URLS.
+  local _cap="${MAX_ALL_URLS:-100000}"
+  if [[ "${_cap}" =~ ^[0-9]+$ ]] && (( _cap > 0 )) && [[ -s "${out_combined}" ]]; then
+    local _total; _total="$(wc -l < "${out_combined}" | tr -d ' ')"
+    if (( _total > _cap )); then
+      log_warn "Capping all_urls.txt: ${_total} -> ${_cap} (set MAX_ALL_URLS to override)"
+      head -n "${_cap}" "${out_combined}" > "${out_combined}.cap" \
+        && mv "${out_combined}.cap" "${out_combined}"
+    fi
+  fi
+
   log_success "JS endpoints: $(wc -l < "${out_endpoints}" | tr -d ' ') | Combined corpus: $(wc -l < "${out_combined}" | tr -d ' ')"
 }

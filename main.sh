@@ -137,6 +137,7 @@ MODULE_FILES=(
   "cors.sh"
   "exporter.sh"
   "diff.sh"
+  "cleanup.sh"
   "notify.sh"
 )
 
@@ -158,6 +159,7 @@ MODULE_FUNCTIONS=(
   "run_cors_check"
   "export_to_json"
   "run_diff_against_previous"
+  "run_cleanup"
   "run_notifications"
 )
 

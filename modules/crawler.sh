@@ -52,6 +52,19 @@ run_crawler() {
     : > "${endpoints_file}"
   fi
 
+  # Cap endpoints.txt — katana on a sprawling app can emit hundreds of
+  # thousands of URLs, almost all duplicates of templated routes. Override
+  # via MAX_ENDPOINTS env var.
+  local _cap="${MAX_ENDPOINTS:-50000}"
+  if [[ "${_cap}" =~ ^[0-9]+$ ]] && (( _cap > 0 )) && [[ -s "${endpoints_file}" ]]; then
+    local _total; _total="$(wc -l < "${endpoints_file}" | tr -d ' ')"
+    if (( _total > _cap )); then
+      log_warn "Capping endpoints.txt: ${_total} -> ${_cap} (set MAX_ENDPOINTS to override)"
+      sort -u "${endpoints_file}" | head -n "${_cap}" > "${endpoints_file}.cap" \
+        && mv "${endpoints_file}.cap" "${endpoints_file}"
+    fi
+  fi
+
   log_info "Extracting JavaScript file URLs into js_files.txt"
   grep -Eo "https?://[^[:space:]\"'<>]+\"?" "${endpoints_file}" 2>/dev/null \
     | awk '{ gsub(/"$/, "", $0); print $0 }' \

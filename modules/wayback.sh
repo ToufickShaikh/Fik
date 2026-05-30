@@ -75,7 +75,18 @@ run_wayback_recon() {
   if declare -F scope_filter >/dev/null 2>&1; then
     scope_filter < "${raw}" > "${raw}.scoped" && mv "${raw}.scoped" "${raw}"
   fi
-  log_info "Raw archived URLs: $(wc -l < "${raw}" | tr -d ' ')"
+  # Hard cap to keep disk usage bounded — wayback can return millions of URLs
+  # per popular domain. The filtered/live subsets that downstream tools rely
+  # on are derived from this capped set. Override via MAX_WAYBACK_URLS.
+  local _cap="${MAX_WAYBACK_URLS:-50000}"
+  if [[ "${_cap}" =~ ^[0-9]+$ ]] && (( _cap > 0 )); then
+    local _total; _total="$(wc -l < "${raw}" | tr -d ' ')"
+    if (( _total > _cap )); then
+      log_warn "Capping wayback URLs: ${_total} -> ${_cap} (set MAX_WAYBACK_URLS to override)"
+      head -n "${_cap}" "${raw}" > "${raw}.cap" && mv "${raw}.cap" "${raw}"
+    fi
+  fi
+  log_info "Raw archived URLs: $(wc -l < "${raw}" | tr -d ' ')"  
 
   if [[ ! -s "${raw}" ]]; then
     log_warn "No archived URLs returned. Wayback module exiting cleanly."

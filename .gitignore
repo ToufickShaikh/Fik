@@ -4,6 +4,8 @@ frontend/node_modules/
 
 # Secrets
 backend/.env
+**/.env
+!**/.env.example
 
 # Frontend build outputs
 frontend/dist/
@@ -14,3 +16,21 @@ backend/database/*
 !backend/database/.gitkeep
 backend/reports/*
 !backend/reports/.gitkeep
+
+# Scan output directories (can grow into many GB)
+results/
+
+# Compressed scan artefacts
+*.gz
+*.zip
+*.tar
+*.tgz
+
+# OS / IDE noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+
+# Logs
+*.log

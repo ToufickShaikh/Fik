@@ -1,0 +1,49 @@
+# --- Build artifacts that explode image size ----------------------------------
+# Node deps: re-installed inside the image.
+**/node_modules/
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Frontend production build (image rebuilds it).
+frontend/dist/
+frontend/build/
+
+# --- Scan output (NEVER ship to image) ----------------------------------------
+results/
+backend/database/scan_*.json
+backend/reports/*.html
+backend/reports/*.md
+
+# --- Local IDE / VCS / OS files -----------------------------------------------
+.git/
+.gitignore
+.gitattributes
+.github/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Misc archives & logs -----------------------------------------------------
+*.log
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# --- Docs (not needed at runtime) ---------------------------------------------
+README.md
+docs/
+
+# --- Memory / chronicle ------------------------------------------------------
+.copilot/
+*.code-search
+
+# --- Secrets / env -----------------------------------------------------------
+**/.env
+**/.env.*
+!**/.env.example
