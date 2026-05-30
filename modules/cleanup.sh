@@ -210,7 +210,8 @@ _build_summary() {
   ' "${sr}" 2>/dev/null || echo '[]')"
 
   # Optional artefact counts (graceful if file missing)
-  local _count() { [[ -s "$1" ]] && wc -l < "$1" | tr -d ' ' || echo 0; }
+  local _count
+  _count() { [[ -s "$1" ]] && wc -l < "$1" | tr -d ' ' || echo 0; }
   local secrets_n endpoints_n discovered_n cors_n takeover_n wayback_n
   secrets_n="$(_count "${d}/secrets.txt")"
   endpoints_n="$(_count "${d}/endpoints.txt")"
