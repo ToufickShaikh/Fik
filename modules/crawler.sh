@@ -22,7 +22,7 @@ run_crawler() {
   local katana_delay katana_concurrency katana_retry katana_duration
   case "${SCAN_PROFILE:-standard}" in
     quick) katana_delay="${KATANA_DELAY:-3}"; katana_concurrency="${KATANA_CONCURRENCY:-2}"; katana_retry="${KATANA_RETRY:-2}"; katana_duration="${KATANA_DURATION:-3m}"  ;;
-    deep)  katana_delay="${KATANA_DELAY:-1}"; katana_concurrency="${KATANA_CONCURRENCY:-5}"; katana_retry="${KATANA_RETRY:-3}"; katana_duration="${KATANA_DURATION:-15m}" ;;
+    deep)  katana_delay="${KATANA_DELAY:-1}"; katana_concurrency="${KATANA_CONCURRENCY:-3}"; katana_retry="${KATANA_RETRY:-3}"; katana_duration="${KATANA_DURATION:-15m}" ;;
     *)     katana_delay="${KATANA_DELAY:-3}"; katana_concurrency="${KATANA_CONCURRENCY:-2}"; katana_retry="${KATANA_RETRY:-3}"; katana_duration="${KATANA_DURATION:-5m}"  ;;
   esac
 
@@ -37,14 +37,41 @@ run_crawler() {
     return 0
   fi
 
+  # Cap the input list — feeding 10k+ live hosts to a headless-chrome crawler
+  # is a guaranteed OOM. Override via KATANA_MAX_HOSTS.
+  local _kmax="${KATANA_MAX_HOSTS:-500}"
+  local katana_input="${live_hosts_file}"
+  if [[ "${_kmax}" =~ ^[0-9]+$ ]] && (( _kmax > 0 )); then
+    local _kt; _kt="$(wc -l < "${live_hosts_file}" | tr -d ' ')"
+    if (( _kt > _kmax )); then
+      log_warn "Capping katana input: ${_kt} -> ${_kmax} hosts (set KATANA_MAX_HOSTS to override)"
+      katana_input="${OUTPUT_DIR}/.katana_input.txt"
+      head -n "${_kmax}" "${live_hosts_file}" > "${katana_input}"
+      register_tempfile "${katana_input}" 2>/dev/null || true
+    fi
+  fi
+
+  # Per-process memory cap for the headless Chrome instances katana spawns.
+  # Without these flags Chrome can balloon past 1 GB RSS per worker.
+  local _katana_chrome_args=(
+    -chrome-arg=--disable-gpu
+    -chrome-arg=--disable-dev-shm-usage
+    -chrome-arg=--disable-extensions
+    -chrome-arg=--disable-background-networking
+    -chrome-arg=--disable-software-rasterizer
+    -chrome-arg=--memory-pressure-off
+    -chrome-arg=--js-flags=--max-old-space-size=256
+  )
+
   : > "${endpoints_file}"
-  run_tool "katana" katana -list "${live_hosts_file}" \
+  run_tool "katana" nice -n 10 katana -list "${katana_input}" \
     -headless \
     -no-sandbox \
     -delay "${katana_delay}" \
     -concurrency "${katana_concurrency}" \
     -retry "${katana_retry}" \
     -crawl-duration "${katana_duration}" \
+    "${_katana_chrome_args[@]}" \
     -f url \
     -o "${endpoints_file}" || true
 

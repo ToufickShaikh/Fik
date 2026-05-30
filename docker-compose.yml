@@ -5,6 +5,22 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+    # ---- Memory safety -------------------------------------------------------
+    # Hard cap so the recon stack (Chromium x N, nuclei, ffuf, katana) can
+    # never exhaust the host. If anything inside the container goes wild the
+    # OOM killer will reap it *inside* the container instead of killing the
+    # user's browser on the host.
+    #   mem_limit / memswap_limit: identical => no swap thrash.
+    #   shm_size: Chromium needs a real /dev/shm or it spills to disk and
+    #             leaks file descriptors (and RAM).
+    #   oom_score_adj: bias the kernel toward killing us before host apps.
+    mem_limit: 8g
+    memswap_limit: 8g
+    mem_swappiness: 10
+    shm_size: 2gb
+    oom_score_adj: 500
+    # PID cap stops a runaway gowitness/katana from fork-bombing the host.
+    pids_limit: 2048
     environment:
       # Mount the repo root at /framework so main.sh and modules/ are accessible.
       - FRAMEWORK_DIR=/framework
@@ -12,6 +28,16 @@ services:
       # Set in your shell or backend/.env to enable notify.sh.
       - NOTIFY_WEBHOOK_URL=${NOTIFY_WEBHOOK_URL:-}
       - NOTIFY_WEBHOOK_TYPE=${NOTIFY_WEBHOOK_TYPE:-slack}
+      # Tighten Node's heap so a leaking report_generator can't grow without
+      # bound — 1.5 GB is plenty for JSON aggregation work.
+      - NODE_OPTIONS=--max-old-space-size=1536
+      # Force every Chromium invocation (gowitness, katana) to use the same
+      # low-RAM flag set, even if a module forgets to pass them explicitly.
+      - CHROME_PATH=/usr/bin/chromium
+      - SCREENSHOT_THREADS=${SCREENSHOT_THREADS:-2}
+      - SCREENSHOT_MAX_HOSTS=${SCREENSHOT_MAX_HOSTS:-250}
+      - KATANA_CONCURRENCY=${KATANA_CONCURRENCY:-3}
+      - KATANA_MAX_HOSTS=${KATANA_MAX_HOSTS:-500}
     volumes:
       - ./:/framework:ro            # whole repo read-only (bash scripts + config)
       - ./results:/framework/results # writable results dir for scan outputs
@@ -28,4 +54,6 @@ services:
       - "5173:80"
     depends_on:
       - backend
+    mem_limit: 256m
+    memswap_limit: 256m
     restart: unless-stopped
