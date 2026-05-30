@@ -16,7 +16,6 @@ services:
     #   oom_score_adj: bias the kernel toward killing us before host apps.
     mem_limit: 8g
     memswap_limit: 8g
-    mem_swappiness: 10
     shm_size: 2gb
     oom_score_adj: 500
     # PID cap stops a runaway gowitness/katana from fork-bombing the host.
