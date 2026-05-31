@@ -42,10 +42,12 @@ export_to_json() {
   log_info "Building merged live services list"
   cat "${live_hosts_file}" "${active_ports_file}" \
     | sed '/^[[:space:]]*$/d' \
+    | grep -viE '^https?://(demo[0-9]*|test[0-9]*|staging[0-9]*|stg[0-9]*|dev[0-9]*|development|sandbox[0-9]*|uat[0-9]*|qa[0-9]*|preview[0-9]*|preprod|pre-prod|localhost|127\.)' \
     | sort -u > "${combined_live_services_file}"
 
   local subdomains_json live_services_json
-  subdomains_json="$(jq -Rn '[inputs | select(length > 0)]' < "${subdomains_file}")"
+  subdomains_json="$(grep -viE '^(demo[0-9]*|test[0-9]*|staging[0-9]*|stg[0-9]*|dev[0-9]*|development|sandbox[0-9]*|uat[0-9]*|qa[0-9]*|preview[0-9]*|preprod|pre-prod)\.' \
+    "${subdomains_file}" 2>/dev/null | jq -Rn '[inputs | select(length > 0)]')"
   live_services_json="$(jq -Rn '[inputs | select(length > 0)]' < "${combined_live_services_file}")"
 
   local max_scan_results_vulns="${MAX_SCAN_RESULTS_VULNS:-20000}"

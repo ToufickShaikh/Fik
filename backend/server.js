@@ -13,6 +13,7 @@ import { spawn } from 'child_process';
 import { WebSocketServer } from 'ws';
 import cron from 'node-cron';
 import { fileURLToPath } from 'url';
+import { insertScan, listScans, getLatestScan, getScanById } from './db.js';
 
 // ---------------------------------------------------------------------------
 // ES-module equivalent of __dirname
@@ -167,7 +168,8 @@ async function listReports() {
   } catch { return []; }
 }
 
-/** Absolute path of the most-recently-modified .json file in a directory. */
+// Legacy JSON helper retained only for the report generator fallback path.
+// New code reads from SQLite via db.js.
 async function getMostRecentJsonFile(dir) {
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -703,27 +705,17 @@ app.get('/api/reports/:filename', async (req, res, next) => {
 // ---------------------------------------------------------------------------
 
 // GET /api/scans?domain=<domain>
-app.get('/api/scans', async (req, res, next) => {
+app.get('/api/scans', (req, res, next) => {
   try {
-    await ensureDatabaseDir();
     const { domain } = req.query;
-    const entries    = await fs.readdir(DATABASE_DIR, { withFileTypes: true });
-    const scans      = [];
-
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.startsWith('scan_') || !entry.name.endsWith('.json')) continue;
-      try {
-        const fullPath   = path.join(DATABASE_DIR, entry.name);
-        const stat       = await fs.stat(fullPath);
-        const payload    = JSON.parse(await fs.readFile(fullPath, 'utf8'));
-        const scanDomain = typeof payload === 'object' && !Array.isArray(payload)
-          ? Object.keys(payload)[0] ?? 'unknown' : 'unknown';
-        if (domain && scanDomain !== domain) continue;
-        scans.push({ fileName: entry.name, domain: scanDomain, scanDate: stat.mtime.toISOString() });
-      } catch { /* skip corrupt files */ }
-    }
-
-    scans.sort((a, b) => new Date(b.scanDate) - new Date(a.scanDate));
+    const rows = listScans(domain || null);
+    const scans = rows.map(r => ({
+      id:           r.id,
+      domain:       r.domain,
+      scanDate:     r.created_at,
+      generatedAt:  r.generated_at,
+      findingCount: r.finding_count,
+    }));
     return res.status(200).json(scans);
   } catch (err) { return next(err); }
 });
@@ -738,13 +730,18 @@ app.post('/api/ingest', async (req, res, next) => {
       return res.status(400).json({ error: 'Payload must be a JSON object.' });
     }
 
-    await ensureDatabaseDir();
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName  = `scan_${timestamp}.json`;
-    const filePath  = path.join(DATABASE_DIR, fileName);
+    const domain = Object.keys(payload)[0];
+    if (!domain) return res.status(400).json({ error: 'Payload has no target key.' });
 
-    await fs.writeFile(filePath, JSON.stringify(payload, null, 2), 'utf8');
-    logInfo(`Ingest saved: ${filePath}`);
+    const node    = payload[domain] ?? {};
+    const scanId  = insertScan(
+      domain,
+      node.generated_at        ?? new Date().toISOString(),
+      node.subdomains          ?? [],
+      node.live_services       ?? [],
+      node.vulnerability_objects ?? [],
+    );
+    logInfo(`Ingest saved to SQLite: domain=${domain} scanId=${scanId}`);
 
     // Fire-and-forget: generate report in the background after ingest.
     const settings = await loadSettings();
@@ -756,23 +753,30 @@ app.post('/api/ingest', async (req, res, next) => {
     });
     rg.on('error', (e) => logError(`report_generator spawn error: ${e.message}`));
 
-    return res.status(202).json({ message: 'Payload accepted.', file: fileName });
+    return res.status(202).json({ message: 'Payload accepted.', scanId });
   } catch (err) { return next(err); }
 });
 
 // GET /api/data — most-recent scan payload (drives the vulnerability table)
-app.get('/api/data', async (req, res, next) => {
+app.get('/api/data', (req, res, next) => {
   try {
-    await ensureDatabaseDir();
-    const latest = await getMostRecentJsonFile(DATABASE_DIR);
-    if (!latest) return res.status(404).json({ error: 'No scan data found.' });
+    const { domain } = req.query;
+    const payload = getLatestScan(domain || null);
+    if (!payload) return res.status(404).json({ error: 'No scan data found.' });
+    const { _scanId, ...data } = payload; // strip internal field before sending
+    return res.status(200).json(data);
+  } catch (err) { return next(err); }
+});
 
-    let parsed;
-    try { parsed = JSON.parse(await fs.readFile(latest, 'utf8')); }
-    catch { return res.status(500).json({ error: 'Stored scan data is corrupted.' }); }
-
-    logInfo(`Serving latest scan data from ${latest}`);
-    return res.status(200).json(parsed);
+// GET /api/data/:id — single scan by SQLite id
+app.get('/api/data/:id', (req, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id < 1) return res.status(400).json({ error: 'Invalid scan id.' });
+    const payload = getScanById(id);
+    if (!payload) return res.status(404).json({ error: 'Scan not found.' });
+    const { _scanId, ...data } = payload;
+    return res.status(200).json(data);
   } catch (err) { return next(err); }
 });
 

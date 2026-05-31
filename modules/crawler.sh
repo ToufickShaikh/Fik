@@ -79,6 +79,30 @@ run_crawler() {
     : > "${endpoints_file}"
   fi
 
+  # Validate collected endpoints — drop anything returning 404 or dead.
+  # After a 6+ hour scan the researcher shouldn't see stale/dead links.
+  if command -v httpx >/dev/null 2>&1 && [[ -s "${endpoints_file}" ]]; then
+    local _validated="${OUTPUT_DIR}/.endpoints_validated.txt"
+    local _rl _thr
+    case "${SCAN_PROFILE:-standard}" in
+      quick) _rl="${HTTPX_RATE_LIMIT:-30}";  _thr="${HTTPX_THREADS:-10}" ;;
+      deep)  _rl="${HTTPX_RATE_LIMIT:-100}"; _thr="${HTTPX_THREADS:-40}" ;;
+      *)     _rl="${HTTPX_RATE_LIMIT:-50}";  _thr="${HTTPX_THREADS:-20}" ;;
+    esac
+    log_info "Validating endpoints with httpx (dropping 404s and dead links)"
+    run_tool "httpx-validate-endpoints" bash -c \
+      "httpx -silent -mc 200,201,204,301,302,307,401,403 \
+             -threads ${_thr} -rl ${_rl} \
+             -l '${endpoints_file}' > '${_validated}'" || true
+    if [[ -s "${_validated}" ]]; then
+      mv "${_validated}" "${endpoints_file}"
+      log_info "Valid endpoints after 404-filter: $(wc -l < "${endpoints_file}" | tr -d ' ')"
+    else
+      log_warn "httpx validation returned no results; keeping original endpoints list"
+      rm -f "${_validated}"
+    fi
+  fi
+
   # Cap endpoints.txt — katana on a sprawling app can emit hundreds of
   # thousands of URLs, almost all duplicates of templated routes. Override
   # via MAX_ENDPOINTS env var.

@@ -56,6 +56,7 @@ run_vulnerability_scan() {
     -c "${nuclei_concurrency}" \
     -retries "${nuclei_retries}" \
     -tags "${effective_tags}" \
+    -severity high,critical \
     -o "${vulnerabilities_jsonl_file}" || true
 
   if command -v jq >/dev/null 2>&1 && [[ -s "${vulnerabilities_jsonl_file}" ]]; then

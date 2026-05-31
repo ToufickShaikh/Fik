@@ -68,5 +68,18 @@ run_subdomain_enumeration() {
   run_tool "httpx" bash -c \
     "sort -u '${subdomains_file}' | httpx -silent -threads ${httpx_threads} -rl ${httpx_rate_limit} -retries ${httpx_retries} > '${live_hosts_file}'" || true
 
+  # Filter out demo/test/staging/sandbox subdomains — these are almost always
+  # out-of-scope for bug bounty programmes and findings on them don't pay.
+  if [[ -s "${live_hosts_file}" ]]; then
+    local _before
+    _before="$(wc -l < "${live_hosts_file}" | tr -d ' ')"
+    grep -viE '^https?://(demo[0-9]*|test[0-9]*|staging[0-9]*|stg[0-9]*|dev[0-9]*|development|sandbox[0-9]*|uat[0-9]*|qa[0-9]*|preview[0-9]*|preprod|pre-prod|localhost|127\.)' \
+      "${live_hosts_file}" > "${live_hosts_file}.filtered" && \
+      mv "${live_hosts_file}.filtered" "${live_hosts_file}" || true
+    local _after
+    _after="$(wc -l < "${live_hosts_file}" | tr -d ' ')"
+    (( _before != _after )) && log_info "Removed $(( _before - _after )) demo/test/staging host(s) from live hosts"
+  fi
+
   log_success "Live hosts: $(wc -l < "${live_hosts_file}" | tr -d ' ')"
 }

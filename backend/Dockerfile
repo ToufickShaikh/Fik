@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl wget jq unzip git \
       dnsutils whois \
       python3 python3-pip \
+      build-essential \
       chromium chromium-sandbox fonts-liberation \
       libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxkbcommon0 \
       libxcomposite1 libxrandr2 libgbm1 libpango-1.0-0 libasound2 \

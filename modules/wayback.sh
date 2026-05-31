@@ -153,7 +153,7 @@ run_wayback_recon() {
     run_tool "nuclei-wayback" bash -c \
       "nuclei -silent -l '${live}' \
               -tags exposure,misconfig,cve,backup,config \
-              -severity low,medium,high,critical \
+              -severity high,critical \
               -rl ${nuclei_rl} -c ${nuclei_c} \
               -jsonl -o '${findings}'" \
       || true
