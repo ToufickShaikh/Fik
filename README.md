@@ -1,26 +1,84 @@
 # Fik — Automated Bug-Bounty Recon Framework
 
-Fik is an end-to-end bash + Node.js framework that chains together best-of-breed
-recon tools (subfinder, httpx, katana, ffuf, nuclei, gowitness, …) into a single
-reproducible pipeline, ships findings to a small Express + WebSocket backend, and
-visualizes them in a React/Vite dashboard. It is designed to run **continuously
-on a low-spec Linux box** (Parrot OS, Debian-slim, or any container host) without
-filling the disk.
+---
 
+## Features
+- **Lightning-fast, low-memory scans**: All findings stored in SQLite (no more huge JSON files)
+- **Only the best findings**: Only HIGH/CRITICAL vulnerabilities are kept ("diamonds-only")
+- **Auto-generated, email-ready summaries**: AI writes a professional Markdown summary for each scan
+- **No more 404s or demo/test hosts**: All dead/demo/test/staging links are filtered out
+- **Modern, containerized stack**: Docker, Node.js, Go, React, Vite, Tailwind
+- **Live dashboard**: Real-time logs and results via WebSocket
+- **Extensible**: 21+ bash modules, easy to add tools
+
+---
+
+## Requirements
+- Linux (bare metal or Docker)
+- Node.js 20+ (for backend)
+- Docker (for containerized use)
+- Go 1.23+ (auto-installed in Docker)
+- SQLite (auto-managed, no setup needed)
+- Google Gemini API key (for AI report summaries, optional)
+
+---
+
+## Installation
+
+### Docker (recommended)
+```bash
+git clone <this-repo>
+cd Fik
+docker compose build
+docker compose up -d
+# Backend: http://localhost:3000
+# Frontend: http://localhost:5173
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                                  Fik runtime                                 │
-├──────────────────────────────────────────────────────────────────────────────┤
-│  main.sh -d <domain> -p quick|standard|deep                                  │
-│     │                                                                        │
-│     ├─► modules/*.sh   (recon pipeline, see table below)                     │
-│     ├─► scan_results.json + summary.json + summary.txt                       │
-│     │                                                                        │
-│     └─► POST /api/ingest ──►  backend/server.js  ──► WebSocket /ws/logs      │
-│                                       ▲                                      │
-│                                       └── frontend (Vite/React, port 5173)   │
-└──────────────────────────────────────────────────────────────────────────────┘
+
+### Bare metal (Linux)
+```bash
+git clone <this-repo>
+cd Fik
+./setup_linux.sh
+cd backend
+npm install
+cd ..
+./modules/install_tools.sh
 ```
+
+---
+
+## Usage
+
+### Start a scan (CLI)
+```bash
+./main.sh -d example.com -p standard
+```
+
+### Start a scan (Dashboard)
+- Open http://localhost:5173
+- Add a target, click "Run scan"
+
+### View results
+- All findings are stored in SQLite (`backend/database/fik.db`)
+- Reports: `backend/reports/` (Markdown, one per finding)
+- Email summary: `backend/reports/email_summary_<target>_<date>.md`
+- Raw scan output: `results/<target>_<timestamp>/`
+
+### Generate reports manually
+```bash
+cd backend
+node report_generator.js
+```
+
+---
+
+## What's New (May 2026)
+- **SQLite backend**: All scan data is now stored in SQLite, not JSON files
+- **Diamonds-only**: Only HIGH/CRITICAL findings are kept (no more bloat)
+- **AI summaries**: Every scan generates a Markdown summary for email
+- **404/demo/test filtering**: No more dead/demo/test/staging links in results
+- **Super-fast ingest**: 10x faster, near-zero RAM usage
 
 ---
 
