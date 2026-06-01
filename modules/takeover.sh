@@ -18,11 +18,15 @@ run_subdomain_takeover() {
   log_step "Subdomain takeover scan"
 
   if command -v subzy >/dev/null 2>&1; then
+    # Newer subzy (v1+) only takes --output (path); the format flag was dropped.
+    # It writes JSON when the filename ends in .json (otherwise plaintext).
     run_tool "subzy" subzy run --targets "${subs}" --hide_fails --concurrency 20 \
-      --output "${jsonl}" --output_format json || true
+      --output "${jsonl}" || true
     if [[ -s "${jsonl}" ]] && command -v jq >/dev/null 2>&1; then
-      jq -r '.[] | "[\(.status)] \(.subdomain) -> \(.service // "unknown")"' \
-        "${jsonl}" 2>/dev/null > "${report}" || true
+      # subzy writes either a JSON array or one JSON object per line; handle both.
+      jq -r 'if type=="array" then .[] else . end
+             | "[\(.status // "?")] \(.subdomain // .domain // "?") -> \(.service // "unknown")"' \
+        "${jsonl}" 2>/dev/null > "${report}" || cp "${jsonl}" "${report}"
     fi
   else
     log_warn "subzy not available; using nuclei takeover templates as fallback."

@@ -48,6 +48,22 @@ run_vulnerability_scan() {
     return 0
   fi
 
+  # ── Self-heal nuclei templates ────────────────────────────────────────────
+  # If the templates dir is empty/missing the only error nuclei prints is
+  # "no templates provided for scan" — which the user just saw. Fix it once
+  # per scan if needed, before running.
+  local _nt_count=0
+  for _d in /root/nuclei-templates /root/.local/nuclei-templates "${HOME}/nuclei-templates" "${HOME}/.local/nuclei-templates"; do
+    if [[ -d "${_d}" ]]; then
+      _nt_count="$(find "${_d}" -name '*.yaml' 2>/dev/null | head -100 | wc -l | tr -d ' ')"
+      (( _nt_count > 0 )) && break
+    fi
+  done
+  if (( _nt_count == 0 )); then
+    log_warn "Nuclei templates not found — running nuclei -update-templates (one-time, ~30s)…"
+    run_tool "nuclei-update-templates" nuclei -update-templates -silent || true
+  fi
+
   : > "${vulnerabilities_jsonl_file}"
   local _raw_jsonl="${vulnerabilities_jsonl_file}.raw"
   : > "${_raw_jsonl}"

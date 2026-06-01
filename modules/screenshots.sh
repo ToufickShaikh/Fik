@@ -68,17 +68,34 @@ run_screenshots() {
 
   local batch
   local b_index=0
+  # Probe once whether the installed gowitness build accepts --chrome-flags.
+  # gowitness v3.x renamed/removed the flag in some builds; if it's missing
+  # the whole batch exits 1 and we lose every screenshot.
+  local _has_chrome_flags=0
+  if gowitness scan file --help 2>&1 | grep -q -- '--chrome-flags'; then
+    _has_chrome_flags=1
+  fi
+
   for batch in "${batch_dir}"/batch_*; do
     [[ -s "${batch}" ]] || continue
     b_index=$((b_index + 1))
     log_info "Screenshot batch ${b_index} ($(wc -l < "${batch}" | tr -d ' ') hosts)"
-    run_tool "gowitness:batch${b_index}" nice -n 10 bash -c \
-      "cd '${shots_dir}' && gowitness scan file -f '${batch}' \
-         --screenshot-path '${shots_dir}' \
-         --timeout '${sh_timeout}' --threads '${sh_threads}' \
-         --chrome-path '${CHROME_PATH:-/usr/bin/chromium}' \
-         --chrome-flags '${chrome_flags}' \
-         >/dev/null 2>&1" || true
+    if (( _has_chrome_flags == 1 )); then
+      run_tool "gowitness:batch${b_index}" nice -n 10 bash -c \
+        "cd '${shots_dir}' && gowitness scan file -f '${batch}' \
+           --screenshot-path '${shots_dir}' \
+           --timeout '${sh_timeout}' --threads '${sh_threads}' \
+           --chrome-path '${CHROME_PATH:-/usr/bin/chromium}' \
+           --chrome-flags '${chrome_flags}' \
+           >/dev/null 2>&1" || true
+    else
+      run_tool "gowitness:batch${b_index}" nice -n 10 bash -c \
+        "cd '${shots_dir}' && gowitness scan file -f '${batch}' \
+           --screenshot-path '${shots_dir}' \
+           --timeout '${sh_timeout}' --threads '${sh_threads}' \
+           --chrome-path '${CHROME_PATH:-/usr/bin/chromium}' \
+           >/dev/null 2>&1" || true
+    fi
   done
 
   local n

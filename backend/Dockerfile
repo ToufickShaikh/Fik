@@ -16,17 +16,28 @@ ARG TARGETARCH=amd64
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ---- 1. Base OS dependencies -------------------------------------------------
+# libpcap0.8        — required at runtime by naabu (was missing → naabu code 127)
+# dirb              — installs /usr/share/wordlists/dirb/common.txt for ffuf fuzzing
+# locales + LC_ALL  — prevents grep "Invalid range end" on UTF-8 locales
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl wget jq unzip git \
       dnsutils whois \
       python3 python3-pip \
       build-essential \
+      libpcap0.8 libpcap-dev \
+      dirb \
+      locales \
       chromium chromium-sandbox fonts-liberation \
       libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxkbcommon0 \
       libxcomposite1 libxrandr2 libgbm1 libpango-1.0-0 libasound2 \
+    && sed -i 's/# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen \
+    && sed -i 's/# *C.UTF-8/C.UTF-8/' /etc/locale.gen 2>/dev/null || true \
+    && locale-gen \
     && rm -rf /var/lib/apt/lists/*
 
-ENV CHROME_PATH=/usr/bin/chromium
+ENV CHROME_PATH=/usr/bin/chromium \
+    LANG=C.UTF-8 \
+    LC_COLLATE=C
 
 # ---- 2. ProjectDiscovery + community binaries via GitHub releases -----------
 # Pinned versions (verified to exist on GitHub releases).
@@ -142,8 +153,29 @@ RUN set -eux; \
     git clone --depth=1 https://github.com/tomnomnom/gf /opt/gf-src; \
     cp /opt/gf-src/examples/*.json /root/.gf/ 2>/dev/null || true
 
-# ---- 5. Nuclei templates (preloaded) ----------------------------------------
-RUN nuclei -update-templates -silent || true
+# ---- 4b. massdns (required by puredns for DNS bruteforcing) -----------------
+# Not in bookworm apt repo, so build from source (tiny C project, ~5s build).
+RUN set -eux; \
+    git clone --depth=1 https://github.com/blechschmidt/massdns /tmp/massdns; \
+    make -C /tmp/massdns >/dev/null 2>&1 || true; \
+    if [ -x /tmp/massdns/bin/massdns ]; then \
+      install -m 0755 /tmp/massdns/bin/massdns /usr/local/bin/massdns; \
+      echo "  [OK] massdns built"; \
+    else \
+      echo "  [BUILD-WARN] massdns build failed"; \
+    fi; \
+    rm -rf /tmp/massdns
+
+# ---- 5. Nuclei templates (preloaded; force fresh download to avoid empty cache) ---
+RUN nuclei -update-templates -silent 2>&1 | tail -3 || true; \
+    # Verify templates were actually written; if not, retry once.
+    if [ -z "$(find /root/nuclei-templates -name '*.yaml' 2>/dev/null | head -1)" ] && \
+       [ -z "$(find /root/.local/nuclei-templates -name '*.yaml' 2>/dev/null | head -1)" ]; then \
+      echo "[BUILD-WARN] nuclei templates empty — retrying"; \
+      nuclei -update-templates -silent 2>&1 | tail -3 || true; \
+    fi; \
+    echo "=== Nuclei template count ==="; \
+    find /root/nuclei-templates /root/.local/nuclei-templates -name '*.yaml' 2>/dev/null | wc -l
 
 # ---- 6. Resolvers + small wordlist (DNS brute) ------------------------------
 RUN set -eux; \

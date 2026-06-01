@@ -51,18 +51,9 @@ run_crawler() {
     fi
   fi
 
-  # Per-process memory cap for the headless Chrome instances katana spawns.
-  # Without these flags Chrome can balloon past 1 GB RSS per worker.
-  local _katana_chrome_args=(
-    -chrome-arg=--disable-gpu
-    -chrome-arg=--disable-dev-shm-usage
-    -chrome-arg=--disable-extensions
-    -chrome-arg=--disable-background-networking
-    -chrome-arg=--disable-software-rasterizer
-    -chrome-arg=--memory-pressure-off
-    -chrome-arg=--js-flags=--max-old-space-size=256
-  )
-
+  # NOTE: katana 1.1+ removed the per-process -chrome-arg flag. Memory is now
+  # tamed via -headless -no-sandbox + the host's chromium flags (we already
+  # set --disable-dev-shm-usage in docker-compose's shm_size and CHROME_PATH).
   : > "${endpoints_file}"
   run_tool "katana" nice -n 10 katana -list "${katana_input}" \
     -headless \
@@ -71,7 +62,6 @@ run_crawler() {
     -concurrency "${katana_concurrency}" \
     -retry "${katana_retry}" \
     -crawl-duration "${katana_duration}" \
-    "${_katana_chrome_args[@]}" \
     -f url \
     -o "${endpoints_file}" || true
 
@@ -117,13 +107,13 @@ run_crawler() {
   fi
 
   log_info "Extracting JavaScript file URLs into js_files.txt"
-  grep -Eo "https?://[^[:space:]\"'<>]+\"?" "${endpoints_file}" 2>/dev/null \
+  LC_ALL=C grep -Eo 'https?://[^[:space:]"'"'"'<>]+"?' "${endpoints_file}" 2>/dev/null \
     | awk '{ gsub(/"$/, "", $0); print $0 }' \
     | awk 'tolower($0) ~ /\.js([?#].*)?$/ { print $0 }' \
     | sort -u > "${js_files_file}" || true
 
   log_info "Searching endpoints output for potential API keys and tokens"
-  grep -Eio "(AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk_(live|test)_[0-9A-Za-z]{16,}|(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)[[:space:]\"':=]+[A-Za-z0-9._-]{8,})" "${endpoints_file}" 2>/dev/null \
+  LC_ALL=C grep -Eio "(AIza[0-9A-Za-z_-]{35}|AKIA[0-9A-Z]{16}|sk_(live|test)_[0-9A-Za-z]{16,}|(api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|password)[[:space:]\"':=]+[A-Za-z0-9._-]{8,})" "${endpoints_file}" 2>/dev/null \
     | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' \
     | sort -u > "${potential_leaks_file}" || true
 

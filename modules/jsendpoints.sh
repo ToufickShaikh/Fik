@@ -27,9 +27,10 @@ run_js_endpoints() {
   fi
 
   # 2) katana -jc to crawl + dump endpoints referenced inside JS.
+  # katana 1.1+ requires -hl (headless) whenever -ho/-nos/-scp/-jc are set.
   if command -v katana >/dev/null 2>&1 && [[ -s "${js_list}" ]]; then
     run_tool "katana-jc" katana -list "${js_list}" -jc -d 2 \
-      -silent -no-sandbox -f url -o "${out_endpoints}" || true
+      -hl -silent -no-sandbox -f url -o "${out_endpoints}" || true
   fi
 
   # 3) Fallback regex extraction for path-like strings inside JS.
@@ -39,7 +40,7 @@ run_js_endpoints() {
     while IFS= read -r url && (( count < 50 )); do
       [[ -z "${url}" ]] && continue
       curl -fsSL --max-time 10 --max-filesize 3000000 "${url}" 2>/dev/null \
-        | grep -Eo '"(\/[a-zA-Z0-9_\-./?=&%:]{3,200})"' \
+        | LC_ALL=C grep -Eo '"(\/[a-zA-Z0-9_\-./?=&%:]{3,200})"' \
         | tr -d '"' >> "${out_endpoints}" || true
       count=$((count+1))
     done < "${js_list}"
