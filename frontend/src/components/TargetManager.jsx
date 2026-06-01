@@ -342,11 +342,18 @@ export default function TargetManager({ onSelectTarget }) {
                           {d.reports.map((r) => (
                             <li key={r.name} className="flex items-center justify-between rounded-lg bg-slate-900/60 px-3 py-1.5">
                               <span className="truncate font-mono text-xs text-slate-300">{r.name}</span>
-                              <a href={`${API_BASE}/api/reports/${encodeURIComponent(r.name)}`}
-                                target="_blank" rel="noopener noreferrer"
-                                className="ml-2 shrink-0 text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
-                                Download
-                              </a>
+                              <span className="ml-2 flex shrink-0 items-center gap-3">
+                                <a href={`${API_BASE}/api/reports/${encodeURIComponent(r.name)}?preview=1`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="text-xs text-emerald-400 hover:text-emerald-300 transition-colors">
+                                  Read
+                                </a>
+                                <a href={`${API_BASE}/api/reports/${encodeURIComponent(r.name)}`}
+                                  target="_blank" rel="noopener noreferrer"
+                                  className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
+                                  Download
+                                </a>
+                              </span>
                             </li>
                           ))}
                         </ul>

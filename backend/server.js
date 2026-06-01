@@ -646,14 +646,11 @@ app.post('/api/report/generate', async (req, res, next) => {
   try {
     const settings = await loadSettings();
     const { domain } = (req.body ?? {});
-    if (!settings.geminiApiKey) {
-      return res.status(400).json({
-        error: 'Missing Gemini API key.',
-        detail: 'Open Settings → Gemini API Key to enable AI report generation.',
-      });
-    }
+    // NOTE: API key is now OPTIONAL. Without a key, the generator writes a rich
+    // static "learning report" from the recon artifacts (no AI narrative). With
+    // a key it adds the full Gemini-generated walkthrough + per-finding deep dives.
     const extraEnv = {
-      GEMINI_API_KEY: settings.geminiApiKey,
+      ...(settings.geminiApiKey && { GEMINI_API_KEY: settings.geminiApiKey }),
       ...(domain && /^[a-zA-Z0-9._-]+$/.test(String(domain)) && { REPORT_DOMAIN: String(domain).trim() }),
     };
 
@@ -668,7 +665,7 @@ app.post('/api/report/generate', async (req, res, next) => {
       child.stderr.on('data', (d) => { stderrBuf += d.toString(); logError(`[report_generator] ${d.toString().trim()}`); });
       child.on('error',  reject);
       child.on('close',  (code) => {
-        // 0 = ok, 2 = soft-fail (e.g. no key handled inside); anything else is an error.
+        // 0 = ok, 2 = soft-fail (static-only report or no AI key); anything else is an error.
         if (code === 0 || code === 2) resolve(code);
         else reject(new Error(`report_generator exited ${code}: ${stderrBuf.slice(-400)}`));
       });
@@ -679,9 +676,21 @@ app.post('/api/report/generate', async (req, res, next) => {
       child.on('close', () => clearTimeout(timer));
     });
 
-    const reports = await listReports();
+    const allReports = await listReports();
+    // Always surface the educational learning report first when present (the
+    // frontend opens reports[0] after generation). Fall back to mtime order.
+    const reports = [...allReports].sort((a, b) => {
+      const aLearn = a.name.startsWith('learning_report_') ? 0 : 1;
+      const bLearn = b.name.startsWith('learning_report_') ? 0 : 1;
+      if (aLearn !== bLearn) return aLearn - bLearn;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
     return res.status(200).json({
-      message: exitCode === 2 ? 'Report generator ran with soft-fail (see logs).' : 'Reports generated.',
+      message: exitCode === 2
+        ? (settings.geminiApiKey
+            ? 'Report generator finished (some steps soft-failed — see logs).'
+            : 'Static learning report generated. Add a Gemini API key in Settings for the full AI walkthrough.')
+        : 'Reports generated.',
       reports,
     });
   } catch (err) {
@@ -700,7 +709,8 @@ app.get('/api/reports', async (req, res, next) => {
   } catch (err) { return next(err); }
 });
 
-// GET /api/reports/:filename — path-traversal-safe download
+// GET /api/reports/:filename  — path-traversal-safe download (or inline preview)
+// Pass ?preview=1 to render in the browser tab instead of forcing a download.
 app.get('/api/reports/:filename', async (req, res, next) => {
   try {
     const { filename } = req.params;
@@ -709,8 +719,11 @@ app.get('/api/reports/:filename', async (req, res, next) => {
     }
     try {
       const content = await fs.readFile(path.join(REPORTS_DIR, filename), 'utf8');
+      const preview = req.query.preview === '1' || req.query.preview === 'true';
       res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      // Inline = browser displays the Markdown source; attachment = downloads.
+      res.setHeader('Content-Disposition',
+        `${preview ? 'inline' : 'attachment'}; filename="${filename}"`);
       return res.status(200).send(content);
     } catch {
       return res.status(404).json({ error: 'Report not found.' });

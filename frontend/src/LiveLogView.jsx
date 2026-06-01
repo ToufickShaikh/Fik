@@ -166,11 +166,25 @@ export default function LiveLogView({ initialDomain }) {
     setGeneratingReport(true);
     setError('');
     try {
-      const res  = await fetch(`${API_BASE}/api/report/generate`, { method: 'POST' });
+      const res  = await fetch(`${API_BASE}/api/report/generate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({}),
+      });
       const body = await res.json();
       if (!res.ok) { setError(body.error || `HTTP ${res.status}`); return; }
       if (body.reports && body.reports.length > 0) {
-        window.open(`${API_BASE}/api/reports/${encodeURIComponent(body.reports[0].name)}`, '_blank');
+        // Prefer the educational learning report; fall back to whatever is newest.
+        const learning = body.reports.find((r) => r.name.startsWith('learning_report_'));
+        const target   = learning ?? body.reports[0];
+        // ?preview=1 renders the Markdown source inline in the new tab
+        // (instead of triggering a forced download) so the user can read it.
+        window.open(`${API_BASE}/api/reports/${encodeURIComponent(target.name)}?preview=1`, '_blank');
+      }
+      if (body.message) {
+        // Surface the soft-fail message (e.g. "add a Gemini API key for the full walkthrough")
+        // so the user knows a static report was produced when no key is set.
+        setError(body.message);
       }
     } catch (err) {
       setError(err.message);
