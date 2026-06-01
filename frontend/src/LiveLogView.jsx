@@ -54,20 +54,48 @@ export default function LiveLogView({ initialDomain }) {
   }, [initialDomain]);
 
   const wsRef       = useRef(null);
-  const logEndRef   = useRef(null);
+  const logBoxRef   = useRef(null);
   const reconnTimer = useRef(null);
+  // Buffer incoming log lines and flush in batches — calling setState per
+  // websocket message (with potentially hundreds/sec during a deep scan) was
+  // the main source of UI lag. We coalesce on a 150 ms timer instead.
+  const pendingLinesRef = useRef([]);
+  const flushTimerRef   = useRef(null);
+  const stickToBottomRef = useRef(true);
 
-  // Auto-scroll to the bottom whenever new lines arrive.
+  // Track whether the user is near the bottom; only auto-scroll then so a
+  // user scrolling back through the log isn't yanked forward every batch.
+  const handleLogScroll = useCallback(() => {
+    const el = logBoxRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 60;
+  }, []);
+
+  // Auto-scroll to the bottom after each batch flush — *only* if the user
+  // hasn't scrolled up. Use instant scroll (smooth was animating per line).
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!stickToBottomRef.current) return;
+    const el = logBoxRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [lines]);
 
-  // Append lines; cap at 5000 to prevent DOM bloat on large scans.
+  // Push a line into the pending buffer; a single timer flushes everything
+  // in one setState so React only re-renders ~6×/sec instead of per message.
   const pushLine = useCallback((line) => {
-    setLines((prev) => {
-      const next = [...prev, stripAnsi(line)];
-      return next.length > 5000 ? next.slice(next.length - 5000) : next;
-    });
+    pendingLinesRef.current.push(stripAnsi(line));
+    if (flushTimerRef.current) return;
+    flushTimerRef.current = setTimeout(() => {
+      flushTimerRef.current = null;
+      const batch = pendingLinesRef.current;
+      if (batch.length === 0) return;
+      pendingLinesRef.current = [];
+      setLines((prev) => {
+        const merged = prev.concat(batch);
+        // Hard cap to keep the DOM bounded on huge scans.
+        return merged.length > 5000 ? merged.slice(merged.length - 5000) : merged;
+      });
+    }, 150);
   }, []);
 
   // WebSocket lifecycle: connect, auto-reconnect on close, clean up on unmount.
@@ -127,6 +155,8 @@ export default function LiveLogView({ initialDomain }) {
     connect();
     return () => {
       clearTimeout(reconnTimer.current);
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
       wsRef.current?.close();
     };
   }, [connect]);
@@ -314,7 +344,11 @@ export default function LiveLogView({ initialDomain }) {
       )}
 
       {/* Log panel */}
-      <div className="h-72 overflow-auto rounded-xl border border-slate-700/60 bg-slate-950/80 p-3 font-mono text-xs leading-relaxed">
+      <div
+        ref={logBoxRef}
+        onScroll={handleLogScroll}
+        className="h-72 overflow-auto rounded-xl border border-slate-700/60 bg-slate-950/80 p-3 font-mono text-xs leading-relaxed"
+      >
         {lines.length === 0 ? (
           <p className="text-slate-600">
             {isRunning ? 'Waiting for output…' : 'Start a scan to see live logs here.'}
@@ -326,7 +360,6 @@ export default function LiveLogView({ initialDomain }) {
             </div>
           ))
         )}
-        <div ref={logEndRef} />
       </div>
 
       {/* Footer: line count + generate report */}

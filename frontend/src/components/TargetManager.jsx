@@ -152,14 +152,27 @@ export default function TargetManager({ onSelectTarget }) {
 
   // â”€â”€ Report generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  async function handleGenerateReport(targetId) {
+  async function handleGenerateReport(targetId, scanId = null) {
     setDetails((prev) => ({ ...prev, [targetId]: { ...prev[targetId], generating: true, error: '' } }));
     try {
-      const res  = await fetch(`${API_BASE}/api/report/generate`, { method: 'POST' });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       const t = targets.find((x) => x.id === targetId);
+      const body = {
+        ...(t?.domain && { domain: t.domain }),
+        ...(Number.isInteger(scanId) && scanId > 0 && { scanId }),
+      };
+      const res  = await fetch(`${API_BASE}/api/report/generate`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       if (t) await loadDetails(t);
+      // Open the freshly-generated learning report inline for instant reading.
+      const fresh = (data.reports || []).find((r) => r.name.startsWith('learning_report_'));
+      if (fresh) {
+        window.open(`${API_BASE}/api/reports/${encodeURIComponent(fresh.name)}?preview=1`, '_blank');
+      }
     } catch (err) {
       setDetails((prev) => ({ ...prev, [targetId]: { ...prev[targetId], error: err.message } }));
     } finally {
@@ -306,19 +319,34 @@ export default function TargetManager({ onSelectTarget }) {
                     <div>
                       <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Past Scans</p>
                       {!d.scans ? (
-                        <p className="text-xs text-slate-600">Loadingâ€¦</p>
+                        <p className="text-xs text-slate-600">Loading…</p>
                       ) : d.scans.length === 0 ? (
                         <p className="text-xs text-slate-600">No scans recorded yet.</p>
                       ) : (
                         <ul className="space-y-1">
-                          {d.scans.slice(0, 5).map((s) => (
-                            <li key={s.fileName} className="flex items-center justify-between rounded-lg bg-slate-900/60 px-3 py-1.5">
-                              <span className="truncate font-mono text-xs text-slate-300">{s.fileName}</span>
-                              <span className="ml-2 shrink-0 text-[10px] text-slate-500">{fmtDate(s.scanDate)}</span>
+                          {d.scans.slice(0, 8).map((s) => (
+                            <li key={s.id} className="flex items-center justify-between gap-2 rounded-lg bg-slate-900/60 px-3 py-1.5">
+                              <span className="flex min-w-0 flex-1 items-center gap-2">
+                                <span className="truncate font-mono text-xs text-slate-300">scan #{s.id}</span>
+                                <span className="shrink-0 rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400">
+                                  {s.findingCount ?? 0} finding{s.findingCount === 1 ? '' : 's'}
+                                </span>
+                              </span>
+                              <span className="flex shrink-0 items-center gap-3">
+                                <span className="text-[10px] text-slate-500">{fmtDate(s.scanDate || s.generatedAt)}</span>
+                                <button
+                                  onClick={() => handleGenerateReport(t.id, s.id)}
+                                  disabled={d.generating}
+                                  title="Regenerate the learning report from this past scan"
+                                  className="rounded-md border border-emerald-600/40 px-2 py-0.5 text-[10px] text-emerald-400 hover:border-emerald-400 disabled:opacity-50 transition-colors"
+                                >
+                                  Report
+                                </button>
+                              </span>
                             </li>
                           ))}
-                          {d.scans.length > 5 && (
-                            <li className="text-[10px] text-slate-600 pl-1">+{d.scans.length - 5} more</li>
+                          {d.scans.length > 8 && (
+                            <li className="text-[10px] text-slate-600 pl-1">+{d.scans.length - 8} more</li>
                           )}
                         </ul>
                       )}

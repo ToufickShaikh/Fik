@@ -13,7 +13,7 @@ import fsSync           from 'fs';
 import dotenv           from 'dotenv';
 import { GoogleGenAI }  from '@google/genai';
 import { fileURLToPath } from 'url';
-import { getLatestScan } from './db.js';
+import { getLatestScan, getScanById } from './db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -55,9 +55,10 @@ function getMatchedAt(finding) {
 }
 
 // ---------------------------------------------------------------------------
-// Recon-artifact discovery: find the newest results/<safe_domain>_* dir
+// Recon-artifact discovery: find the newest results/<safe_domain>_* dir, or
+// (when generatedAt is supplied) the dir whose timestamp is closest to it.
 // ---------------------------------------------------------------------------
-function findLatestScanDir(targetDomain) {
+function findLatestScanDir(targetDomain, generatedAt = null) {
   const safe = targetDomain.replace(/[^a-zA-Z0-9._-]/g, '_');
   let entries;
   try {
@@ -71,10 +72,34 @@ function findLatestScanDir(targetDomain) {
       const full = path.join(RESULTS_DIR, e.name);
       let mtime = 0;
       try { mtime = fsSync.statSync(full).mtimeMs; } catch { /* ignore */ }
-      return { full, mtime };
-    })
-    .sort((a, b) => b.mtime - a.mtime);
-  return matches[0]?.full ?? null;
+      // The dir suffix encodes the scan timestamp — e.g.
+      // gargicollege.in_2026-05-15T02-22-43-659Z. Parse it back to epoch ms
+      // so we can pick the dir that matches a specific past scan.
+      const suffix = e.name.slice(safe.length + 1);
+      const isoish = suffix.replace(/_$/, '')
+                           .replace(/-(\d{3}Z)$/, '.$1')
+                           .replace(/T(\d{2})-(\d{2})-(\d{2})/, 'T$1:$2:$3');
+      const parsed = Date.parse(isoish);
+      return { full, mtime, suffixMs: Number.isFinite(parsed) ? parsed : null };
+    });
+  if (matches.length === 0) return null;
+
+  if (generatedAt) {
+    const target = Date.parse(generatedAt);
+    if (Number.isFinite(target)) {
+      // Pick the dir whose timestamp is closest (and within 1 hour) of the
+      // scan's generated_at. If nothing is close, fall back to newest.
+      const scored = matches
+        .filter(m => m.suffixMs != null)
+        .map(m => ({ ...m, delta: Math.abs(m.suffixMs - target) }))
+        .sort((a, b) => a.delta - b.delta);
+      if (scored.length > 0 && scored[0].delta < 60 * 60 * 1000) {
+        return scored[0].full;
+      }
+    }
+  }
+  matches.sort((a, b) => b.mtime - a.mtime);
+  return matches[0].full;
 }
 
 function readLines(file, cap = 5000) {
@@ -438,13 +463,20 @@ async function generateContent(aiClient, prompt, retries = 2) {
 async function main() {
   const apiKey      = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
   const wantedDomain = (process.env.REPORT_DOMAIN || '').trim() || null;
+  const wantedScanId = Number.parseInt(process.env.REPORT_SCAN_ID || '', 10);
 
-  // Pull latest scan from SQLite (high/critical findings only at this layer).
-  const payload = getLatestScan(wantedDomain);
+  // Pull scan from SQLite — by id when REPORT_SCAN_ID is supplied (used by
+  // "Generate from past scan" in the UI), otherwise the latest scan for the
+  // optional REPORT_DOMAIN. High/critical findings only at this layer.
+  const payload = Number.isInteger(wantedScanId) && wantedScanId > 0
+    ? getScanById(wantedScanId)
+    : getLatestScan(wantedDomain);
   if (!payload) {
-    logInfo(wantedDomain
-      ? `No scan data for "${wantedDomain}". Run a scan first.`
-      : 'No scan data in database. Run a scan first.');
+    logInfo(wantedScanId
+      ? `No scan with id=${wantedScanId} in database.`
+      : (wantedDomain
+          ? `No scan data for "${wantedDomain}". Run a scan first.`
+          : 'No scan data in database. Run a scan first.'));
     return;
   }
 
@@ -471,7 +503,10 @@ async function main() {
 
   // Gather recon artifacts from the on-disk results dir (this is what powers
   // the always-generated learning report, regardless of nuclei findings).
-  const scanDir = findLatestScanDir(targetDomain);
+  // When a specific past scanId was requested we try to match the recon dir
+  // by the scan's generated_at timestamp so the report describes the right run.
+  const generatedAt = node?.generated_at ?? null;
+  const scanDir = findLatestScanDir(targetDomain, generatedAt);
   const recon   = scanDir ? gatherReconArtifacts(scanDir) : null;
   if (scanDir) {
     logInfo(`Recon dir: ${scanDir}`);
@@ -482,7 +517,10 @@ async function main() {
   await fs.mkdir(REPORTS_DIR, { recursive: true });
   const safeTarget = sanitizeFilePart(targetDomain);
   const dateTag    = new Date().toISOString().slice(0, 10);
-  const learningPath = path.join(REPORTS_DIR, `learning_report_${safeTarget}_${dateTag}.md`);
+  // Include scan id (when present) in the filename so regenerating a past
+  // scan's report doesn't overwrite today's latest-scan report.
+  const scanTag    = Number.isInteger(wantedScanId) && wantedScanId > 0 ? `_scan${wantedScanId}` : '';
+  const learningPath = path.join(REPORTS_DIR, `learning_report_${safeTarget}_${dateTag}${scanTag}.md`);
 
   logInfo(`Target: ${targetDomain} — critical=${criticalFindings.length} high=${highFindings.length} ` +
           `subdomains=${recon?.counts.subdomains ?? 0} live=${recon?.counts.liveHosts ?? 0} ` +

@@ -645,13 +645,16 @@ app.put('/api/settings', async (req, res, next) => {
 app.post('/api/report/generate', async (req, res, next) => {
   try {
     const settings = await loadSettings();
-    const { domain } = (req.body ?? {});
+    const { domain, scanId } = (req.body ?? {});
     // NOTE: API key is now OPTIONAL. Without a key, the generator writes a rich
     // static "learning report" from the recon artifacts (no AI narrative). With
     // a key it adds the full Gemini-generated walkthrough + per-finding deep dives.
+    // scanId (optional, integer) lets the user regenerate a report from ANY
+    // past scan in the database, not just the most recent one.
     const extraEnv = {
       ...(settings.geminiApiKey && { GEMINI_API_KEY: settings.geminiApiKey }),
       ...(domain && /^[a-zA-Z0-9._-]+$/.test(String(domain)) && { REPORT_DOMAIN: String(domain).trim() }),
+      ...(Number.isInteger(scanId) && scanId > 0 && { REPORT_SCAN_ID: String(scanId) }),
     };
 
     const exitCode = await new Promise((resolve, reject) => {
