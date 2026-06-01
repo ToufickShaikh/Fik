@@ -127,7 +127,32 @@ WORDLIST
 
     log_info "[${host_index}] Fuzzing ${scan_host}"
 
-    run_tool "ffuf:${safe_host}" ffuf -s -r -fc 404 \
+    # ─── BASELINE FINGERPRINTING (false-positive mitigation) ─────────────────
+    # Many sites return HTTP 200 with a "soft 404" page for any unknown path.
+    # ffuf's default -fc 404 is then useless. We probe TWO random nonsense
+    # paths and, if both return the same status+size, treat that as the
+    # baseline-fake-200 and filter it out via -fc / -fs / -fl.
+    local _rnd1 _rnd2 baseline_status="" baseline_size="" baseline_words=""
+    _rnd1="zzfik$(date +%s%N | tail -c 8)nope1"
+    _rnd2="zzfik$(date +%s%N | tail -c 8)nope2"
+    local _b1 _b2
+    _b1="$(curl -sk -o /dev/null -m 8 -L -w '%{http_code} %{size_download}' "${scan_host%/}/${_rnd1}" 2>/dev/null || echo "")"
+    _b2="$(curl -sk -o /dev/null -m 8 -L -w '%{http_code} %{size_download}' "${scan_host%/}/${_rnd2}" 2>/dev/null || echo "")"
+    if [[ -n "${_b1}" && "${_b1}" == "${_b2}" ]]; then
+      baseline_status="${_b1%% *}"
+      baseline_size="${_b1##* }"
+      log_info "       baseline soft-404: status=${baseline_status} size=${baseline_size}"
+    fi
+
+    # Build filter args: always filter real 404s; if soft-404 detected, also
+    # filter by status+size (and a size window of ±2 bytes via -fs list).
+    local _filter_args=( -fc 404 )
+    if [[ -n "${baseline_status}" && "${baseline_status}" != "404" && "${baseline_status}" != "000" ]]; then
+      _filter_args=( -fc "404,${baseline_status}" -fs "${baseline_size}" )
+    fi
+
+    run_tool "ffuf:${safe_host}" ffuf -s -r \
+      "${_filter_args[@]}" \
       -rate "${ffuf_rate}" \
       -t "${ffuf_threads}" \
       -maxtime "${ffuf_maxtime}" \
@@ -136,7 +161,19 @@ WORDLIST
       -u "${scan_host%/}/FUZZ" || true
 
     if [[ -s "${host_json_file}" ]]; then
-      jq -r '.results[]? | .url // empty' "${host_json_file}" 2>/dev/null >> "${discovered_directories_file}" || true
+      # Post-filter: drop any result whose response length matches the
+      # baseline within ±5 bytes (catches soft-404s missed by -fs).
+      local _bsize_filter="${baseline_size:-}"
+      jq -r --arg bsize "${_bsize_filter}" '
+        .results[]?
+        | select(
+            ($bsize == "")
+            or ((.length // 0 | tonumber) < ((($bsize|tonumber) - 5)))
+            or ((.length // 0 | tonumber) > ((($bsize|tonumber) + 5)))
+          )
+        | .url // empty
+      ' "${host_json_file}" 2>/dev/null >> "${discovered_directories_file}" || \
+        jq -r '.results[]? | .url // empty' "${host_json_file}" 2>/dev/null >> "${discovered_directories_file}" || true
     fi
   done < "${live_hosts_file}"
 

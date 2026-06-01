@@ -3,6 +3,8 @@ import LiveLogView from './LiveLogView';
 import ResourceMonitor from './components/ResourceMonitor';
 import SettingsPanel from './components/SettingsPanel';
 import TargetManager from './components/TargetManager';
+import BugBountyScan from './components/BugBountyScan';
+import AIReportPanel from './components/AIReportPanel';
 
 // ---------------------------------------------------------------------------
 // Icons
@@ -31,6 +33,7 @@ function IconClose() {
 export default function App() {
   const [selectedDomain, setSelectedDomain] = useState(null);
   const [showSettings, setShowSettings]     = useState(false);
+  const [activeTab, setActiveTab]           = useState('targets'); // targets | bugbounty | ai
 
   return (
     <div className="min-h-screen bg-gray-950 font-sans text-slate-100">
@@ -98,16 +101,49 @@ export default function App() {
           </div>
         )}
 
-        {/* â”€â”€ Resource Sentinel â”€â”€ */}
+        {/* ── Resource Sentinel ── */}
         <ResourceMonitor />
 
-        {/* â”€â”€ Main content grid â”€â”€ */}
-        {/*  Desktop: 2-col (target list left, scan console right)  */}
-        {/*  Mobile:  stacked                                        */}
-        <div className="grid gap-5 lg:grid-cols-[minmax(320px,2fr)_3fr]">
-          <TargetManager onSelectTarget={setSelectedDomain} />
-          <LiveLogView initialDomain={selectedDomain} />
-        </div>
+        {/* ── Mode tabs ── */}
+        <nav className="flex flex-wrap gap-2">
+          {[
+            { id: 'targets',   label: 'Targets',
+              active: 'bg-cyan-900/30 border-cyan-500/60 text-cyan-200' },
+            { id: 'bugbounty', label: 'Bug-Bounty Scope',
+              active: 'bg-purple-900/30 border-purple-500/60 text-purple-200' },
+            { id: 'ai',        label: 'AI Report Builder',
+              active: 'bg-emerald-900/30 border-emerald-500/60 text-emerald-200' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors border ${
+                activeTab === t.id
+                  ? t.active
+                  : 'border-slate-700/70 text-slate-400 hover:border-slate-600 hover:text-slate-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+
+        {/* ── Main content ── */}
+        {activeTab === 'targets' && (
+          <div className="grid gap-5 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+            <TargetManager onSelectTarget={setSelectedDomain} />
+            <LiveLogView initialDomain={selectedDomain} />
+          </div>
+        )}
+        {activeTab === 'bugbounty' && (
+          <div className="grid gap-5 lg:grid-cols-[minmax(320px,2fr)_3fr]">
+            <BugBountyScan />
+            <LiveLogView initialDomain={selectedDomain} />
+          </div>
+        )}
+        {activeTab === 'ai' && (
+          <AIReportPanel />
+        )}
 
         {/* â”€â”€ Footer â”€â”€ */}
         <footer className="pb-2 text-center text-[10px] text-slate-700">

@@ -55,6 +55,15 @@ run_subdomain_enumeration() {
     echo "${TARGET_DOMAIN}"
   } | sed '/^[[:space:]]*$/d' | sort -u > "${subdomains_file}"
 
+  # Apply strict scope filtering when bug-bounty mode is on.
+  if [[ "${STRICT_SCOPE:-0}" == "1" ]] && declare -F scope_filter >/dev/null 2>&1; then
+    local _before _after
+    _before="$(wc -l < "${subdomains_file}" | tr -d ' ')"
+    scope_filter < "${subdomains_file}" > "${subdomains_file}.scoped" && mv "${subdomains_file}.scoped" "${subdomains_file}"
+    _after="$(wc -l < "${subdomains_file}" | tr -d ' ')"
+    log_info "STRICT_SCOPE: subdomains filtered ${_before} → ${_after}"
+  fi
+
   log_info "Subdomain count: $(wc -l < "${subdomains_file}" | tr -d ' ')"
 
   if [[ ! -s "${subdomains_file}" ]]; then

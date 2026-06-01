@@ -645,28 +645,46 @@ app.put('/api/settings', async (req, res, next) => {
 app.post('/api/report/generate', async (req, res, next) => {
   try {
     const settings = await loadSettings();
-    const extraEnv = settings.geminiApiKey ? { GEMINI_API_KEY: settings.geminiApiKey } : {};
+    const { domain } = (req.body ?? {});
+    if (!settings.geminiApiKey) {
+      return res.status(400).json({
+        error: 'Missing Gemini API key.',
+        detail: 'Open Settings → Gemini API Key to enable AI report generation.',
+      });
+    }
+    const extraEnv = {
+      GEMINI_API_KEY: settings.geminiApiKey,
+      ...(domain && /^[a-zA-Z0-9._-]+$/.test(String(domain)) && { REPORT_DOMAIN: String(domain).trim() }),
+    };
 
-    await new Promise((resolve, reject) => {
+    const exitCode = await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [REPORT_GENERATOR_PATH], {
         cwd:   BACKEND_DIR,
         env:   { ...process.env, ...extraEnv },
         stdio: ['ignore', 'pipe', 'pipe'],
       });
+      let stderrBuf = '';
       child.stdout.on('data', (d) => logInfo(`[report_generator] ${d.toString().trim()}`));
-      child.stderr.on('data', (d) => logError(`[report_generator] ${d.toString().trim()}`));
+      child.stderr.on('data', (d) => { stderrBuf += d.toString(); logError(`[report_generator] ${d.toString().trim()}`); });
       child.on('error',  reject);
-      child.on('close',  (code) => (code === 0 ? resolve() : reject(new Error(`report_generator exited ${code}`))));
+      child.on('close',  (code) => {
+        // 0 = ok, 2 = soft-fail (e.g. no key handled inside); anything else is an error.
+        if (code === 0 || code === 2) resolve(code);
+        else reject(new Error(`report_generator exited ${code}: ${stderrBuf.slice(-400)}`));
+      });
       const timer = setTimeout(() => {
         child.kill('SIGTERM');
-        reject(new Error('Report generation timed out after 120 s'));
-      }, 120_000);
+        reject(new Error('Report generation timed out after 180 s'));
+      }, 180_000);
       child.on('close', () => clearTimeout(timer));
     });
 
-    return res.status(200).json({ message: 'Reports generated.', reports: await listReports() });
+    const reports = await listReports();
+    return res.status(200).json({
+      message: exitCode === 2 ? 'Report generator ran with soft-fail (see logs).' : 'Reports generated.',
+      reports,
+    });
   } catch (err) {
-    // Surface the actual failure (no data, bad API key, timeout) rather than a generic 500.
     logError(`Report generation failed: ${err.message}`);
     return res.status(503).json({ error: 'Report generation failed.', detail: err.message });
   }
@@ -745,13 +763,17 @@ app.post('/api/ingest', async (req, res, next) => {
 
     // Fire-and-forget: generate report in the background after ingest.
     const settings = await loadSettings();
-    const extraEnv = settings.geminiApiKey ? { GEMINI_API_KEY: settings.geminiApiKey } : {};
-    const rg = spawn(process.execPath, [REPORT_GENERATOR_PATH], {
-      cwd:   BACKEND_DIR,
-      env:   { ...process.env, ...extraEnv },
-      stdio: 'ignore',
-    });
-    rg.on('error', (e) => logError(`report_generator spawn error: ${e.message}`));
+    if (settings.geminiApiKey) {
+      const extraEnv = { GEMINI_API_KEY: settings.geminiApiKey, REPORT_DOMAIN: domain };
+      const rg = spawn(process.execPath, [REPORT_GENERATOR_PATH], {
+        cwd:   BACKEND_DIR,
+        env:   { ...process.env, ...extraEnv },
+        stdio: 'ignore',
+      });
+      rg.on('error', (e) => logError(`report_generator spawn error: ${e.message}`));
+    } else {
+      logInfo('No Gemini API key set — skipping auto report generation. (Configure in Settings.)');
+    }
 
     return res.status(202).json({ message: 'Payload accepted.', scanId });
   } catch (err) { return next(err); }
@@ -806,6 +828,237 @@ app.post('/api/targets/:id/schedule', async (req, res, next) => {
     if (targets[idx].schedule) registerCronJob(targets[idx]);
     return res.status(200).json(targets[idx]);
   } catch (err) { return next(err); }
+});
+
+// =============================================================================
+// Bug-Bounty scope-restricted scan
+// =============================================================================
+//
+// POST /api/bugbounty/scan
+//   body: { scopeText: string, profile?: 'quick'|'standard'|'deep',
+//           label?: string, notes?: string }
+//
+// Parses a free-form in-scope list (one per line, supports wildcards like
+// https://x.com/admin/*), derives:
+//   - root domain (first parsed URL's hostname)
+//   - includeScope regex (passed through scope.sh)
+// Creates/updates a saved target and launches a STRICT_SCOPE scan that will
+// never touch out-of-scope hosts.
+// =============================================================================
+
+function _parseScopeText(scopeText) {
+  // Extract URLs or host[/path[/*]] tokens from arbitrary pasted text.
+  const tokens = new Set();
+  const urlRe  = /https?:\/\/[^\s`'")>\]]+/gi;
+  const m1     = String(scopeText || '').match(urlRe) || [];
+  m1.forEach((u) => tokens.add(u.replace(/[.,)\]]+$/, '')));
+  // Also accept bare host lines like "example.com/*"
+  String(scopeText || '').split(/\r?\n/).forEach((line) => {
+    const t = line.trim().replace(/^[`*\-\s]+/, '').replace(/[`*\s]+$/, '');
+    if (/^[a-z0-9.-]+(\/.*)?$/i.test(t) && t.includes('.')) tokens.add(t);
+  });
+  const list = [...tokens]
+    .map(s => s.replace(/^https?:\/\//, ''))     // strip scheme
+    .map(s => s.replace(/\/+$/, ''))             // trim trailing slash (preserves /*)
+    .filter(Boolean);
+  // Derive root domain from the first token: hostname minus path.
+  let rootHost = '';
+  for (const t of list) {
+    const h = t.split('/')[0];
+    if (/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(h)) { rootHost = h; break; }
+  }
+  return { tokens: list, rootHost };
+}
+
+app.post('/api/bugbounty/scan', async (req, res, next) => {
+  try {
+    const { scopeText, profile = 'standard', label, notes = '' } = req.body ?? {};
+    if (!scopeText || typeof scopeText !== 'string' || scopeText.trim().length < 3) {
+      return res.status(400).json({ error: 'scopeText is required.' });
+    }
+    if (!['quick','standard','deep'].includes(profile)) {
+      return res.status(400).json({ error: 'Invalid profile.' });
+    }
+    if (activeScan) {
+      return res.status(409).json({ error: 'A scan is already running.', pid: activeScan.pid });
+    }
+
+    const { tokens, rootHost } = _parseScopeText(scopeText);
+    if (!rootHost) {
+      return res.status(400).json({ error: 'Could not derive a root domain from the provided scope.' });
+    }
+    if (tokens.length === 0) {
+      return res.status(400).json({ error: 'No in-scope URLs parsed.' });
+    }
+
+    // Persist as a target so future runs / reports stay attached to this program.
+    const targets    = await loadTargets();
+    const safeDomain = rootHost.toLowerCase();
+    const now        = new Date().toISOString();
+    let target       = targets.find(t => t.domain.toLowerCase() === safeDomain);
+    const includeScope = tokens.join('\n');
+    if (!target) {
+      target = {
+        id: makeId(),
+        domain: safeDomain,
+        includeScope,
+        excludeScope: '',
+        notes: (label ? `[BugBounty] ${label}\n` : '[BugBounty]\n') + String(notes),
+        createdAt: now, updatedAt: now,
+      };
+      targets.push(target);
+    } else {
+      target.includeScope = includeScope;
+      target.notes        = (label ? `[BugBounty] ${label}\n` : target.notes || '') + (notes ? `\n${notes}` : '');
+      target.updatedAt    = now;
+    }
+    await saveTargets(targets);
+
+    // Launch scan with STRICT_SCOPE so subdomains.sh & friends drop OOS hosts.
+    const settings = await loadSettings();
+    const env = { ...buildScanEnv(settings, profile), STRICT_SCOPE: '1' };
+    const scriptPath = path.join(FRAMEWORK_DIR, 'main.sh');
+    const child = spawn(BASH_PATH, [scriptPath, '-d', safeDomain, '-p', profile], {
+      cwd: FRAMEWORK_DIR, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    });
+    activeScan = { child, domain: safeDomain, profile, startedAt: now, pid: child.pid, paused: false };
+    broadcast({ type: 'status', status: 'started', domain: safeDomain, profile, pid: child.pid });
+    logInfo(`BugBounty scan started — domain=${safeDomain} tokens=${tokens.length} pid=${child.pid}`);
+
+    child.stdout.on('data', (chunk) => {
+      for (const line of chunk.toString().split('\n')) if (line) broadcast({ type: 'log', stream: 'stdout', line });
+    });
+    child.stderr.on('data', (chunk) => {
+      for (const line of chunk.toString().split('\n')) if (line) broadcast({ type: 'log', stream: 'stderr', line });
+    });
+    child.on('error', (err) => { broadcast({ type: 'status', status: 'error', message: err.message }); activeScan = null; });
+    child.on('close', (code) => { broadcast({ type: 'status', status: 'stopped', code }); activeScan = null; });
+
+    return res.status(202).json({
+      message: 'Bug-bounty scan started.',
+      pid: child.pid, domain: safeDomain, profile,
+      scopeTokens: tokens, targetId: target.id,
+    });
+  } catch (err) { return next(err); }
+});
+
+// =============================================================================
+// AI assistance — scan planner + report-from-notes
+// =============================================================================
+
+let _aiClient = null;
+async function getAiClient() {
+  const s = await loadSettings();
+  if (!s.geminiApiKey) throw new Error('Missing Gemini API key. Configure in Settings.');
+  if (_aiClient && _aiClient._key === s.geminiApiKey) return _aiClient;
+  const { GoogleGenAI } = await import('@google/genai');
+  _aiClient = new GoogleGenAI({ apiKey: s.geminiApiKey });
+  _aiClient._key = s.geminiApiKey;
+  return _aiClient;
+}
+
+async function callGemini(prompt) {
+  const client = await getAiClient();
+  const resp   = await client.models.generateContent({ model: 'gemini-2.5-flash', contents: prompt });
+  const text   = typeof resp?.text === 'string' ? resp.text.trim() : '';
+  if (!text) throw new Error('Empty response from Gemini.');
+  return text;
+}
+
+// POST /api/ai/plan-scan
+//   body: { prompt: string, scopeText?: string, techs?: string[] }
+//   returns: { profile, modules:[], nucleiTags:[], rationale, raw }
+app.post('/api/ai/plan-scan', async (req, res) => {
+  try {
+    const { prompt = '', scopeText = '', techs = [] } = req.body ?? {};
+    if (!prompt.trim()) return res.status(400).json({ error: 'prompt is required.' });
+
+    const planningPrompt = [
+      'You are a senior bug-bounty automation strategist.',
+      'Given the analyst prompt, the in-scope assets, and detected technologies,',
+      'pick the most efficient Fik scan plan. Respond with STRICT JSON only,',
+      'no prose, no markdown fences. Schema:',
+      '{',
+      '  "profile": "quick"|"standard"|"deep",',
+      '  "modules": [string],   // subset of: subdomains, dns_brute, port_scan, crawler, fuzzer, tech_detect, vulnscan, wayback, js_endpoints, takeover, secrets, gf_triage, screenshots, cors',
+      '  "nucleiTags": [string],',
+      '  "rationale": string    // 1-2 sentences',
+      '}',
+      '',
+      `Analyst prompt: ${prompt}`,
+      `In-scope (truncated): ${String(scopeText).slice(0, 2000)}`,
+      `Detected technologies: ${Array.isArray(techs) ? techs.join(', ') : ''}`,
+    ].join('\n');
+
+    const raw = await callGemini(planningPrompt);
+    // Be forgiving: strip code fences if model adds them.
+    const cleaned = raw.replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
+    let parsed;
+    try { parsed = JSON.parse(cleaned); }
+    catch { return res.status(200).json({ raw, error: 'Model returned non-JSON.' }); }
+
+    return res.status(200).json({ ...parsed, raw });
+  } catch (err) {
+    logError(`AI plan-scan failed: ${err.message}`);
+    return res.status(503).json({ error: err.message });
+  }
+});
+
+// POST /api/ai/report-from-notes
+//   body: { domain?: string, prompt: string, notes: string, includeScan?: boolean }
+//   returns: { reportName, content }
+app.post('/api/ai/report-from-notes', async (req, res) => {
+  try {
+    const { domain = 'manual', prompt = '', notes = '', includeScan = false } = req.body ?? {};
+    if (!prompt.trim() && !notes.trim()) {
+      return res.status(400).json({ error: 'prompt or notes is required.' });
+    }
+    const safeDomain = String(domain).replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 120) || 'manual';
+
+    // Optionally enrich with latest scan summary for the domain.
+    let scanContext = '';
+    if (includeScan) {
+      try {
+        const payload = getLatestScan(domain === 'manual' ? null : domain);
+        if (payload) {
+          const key = Object.keys(payload).find(k => k !== '_scanId');
+          const node = payload[key] || {};
+          const vulns = (node.vulnerability_objects || []).slice(0, 30).map(v => ({
+            template_id: v.template_id ?? v['template-id'],
+            name: v?.info?.name,
+            severity: v?.info?.severity ?? v.severity,
+            matched_at: v.matched_at ?? v['matched-at'] ?? v.host,
+          }));
+          scanContext = JSON.stringify({ domain: key, subdomainCount: (node.subdomains||[]).length, vulns }, null, 2);
+        }
+      } catch { /* ignore */ }
+    }
+
+    const fullPrompt = [
+      'You are a senior bug-bounty researcher producing a professional Markdown report.',
+      'Use clear section headings. Avoid speculation; flag uncertain items as "Assumed".',
+      'If the notes describe a reproduction, mirror it precisely in "Steps to Reproduce".',
+      '',
+      `Target: ${domain}`,
+      '',
+      `Analyst instructions:\n${prompt}`,
+      '',
+      `Notes / evidence:\n${notes}`,
+      scanContext ? `\nLatest scan context (JSON):\n${scanContext}` : '',
+      '',
+      'Output a single Markdown document. Do not wrap it in code fences.',
+    ].filter(Boolean).join('\n');
+
+    const md = await callGemini(fullPrompt);
+    await fs.mkdir(REPORTS_DIR, { recursive: true });
+    const reportName = `ai_${safeDomain}_${Date.now()}.md`;
+    await fs.writeFile(path.join(REPORTS_DIR, reportName), md, 'utf8');
+    logInfo(`AI report saved: ${reportName}`);
+    return res.status(200).json({ reportName, content: md });
+  } catch (err) {
+    logError(`AI report-from-notes failed: ${err.message}`);
+    return res.status(503).json({ error: err.message });
+  }
 });
 
 // =============================================================================

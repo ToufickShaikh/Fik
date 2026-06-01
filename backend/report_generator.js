@@ -161,13 +161,23 @@ async function generateContent(aiClient, prompt, retries = 2) {
 async function main() {
   const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
   if (!apiKey) {
-    throw new Error('Missing API key. Set GEMINI_API_KEY in backend/.env');
+    // Soft-fail with exit code 2 so the backend can surface a helpful message
+    // (missing API key vs real crash) without polluting stderr as an error.
+    logInfo('No GEMINI_API_KEY configured. Skipping AI report generation. ' +
+            'Open Settings → Gemini API Key to enable.');
+    process.exitCode = 2;
+    return;
   }
 
+  // Optional: scope to a specific domain via env (used by /api/report/generate?domain=).
+  const wantedDomain = (process.env.REPORT_DOMAIN || '').trim() || null;
+
   // Pull latest scan from SQLite (already filtered to high/critical by db.js).
-  const payload = getLatestScan(null);
+  const payload = getLatestScan(wantedDomain);
   if (!payload) {
-    logInfo('No scan data in database. Nothing to process.');
+    logInfo(wantedDomain
+      ? `No scan data for "${wantedDomain}". Run a scan first.`
+      : 'No scan data in database. Run a scan first.');
     return;
   }
 
@@ -185,10 +195,19 @@ async function main() {
     return;
   }
 
-  const criticalFindings = vulns.filter(f => getSeverity(f) === 'critical');
-  const highFindings     = vulns.filter(f => getSeverity(f) === 'high');
+  // Final-stage dedupe: same template_id at the same host = one report.
+  const seen = new Set();
+  const uniqueVulns = vulns.filter((f) => {
+    const key = `${f?.template_id ?? f?.['template-id'] ?? f?.template ?? 'unknown'}|${getMatchedAt(f)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-  logInfo(`Target: ${targetDomain} — critical=${criticalFindings.length} high=${highFindings.length}`);
+  const criticalFindings = uniqueVulns.filter(f => getSeverity(f) === 'critical');
+  const highFindings     = uniqueVulns.filter(f => getSeverity(f) === 'high');
+
+  logInfo(`Target: ${targetDomain} — critical=${criticalFindings.length} high=${highFindings.length} (deduped ${vulns.length}→${uniqueVulns.length})`);
 
   const aiClient   = new GoogleGenAI({ apiKey });
   const usedPaths  = new Set();
@@ -198,7 +217,7 @@ async function main() {
   await fs.mkdir(REPORTS_DIR, { recursive: true });
 
   // ── 1. Per-finding reports ───────────────────────────────────────────────
-  for (const finding of vulns) {
+  for (const finding of uniqueVulns) {
     const vulnName = getVulnName(finding);
     logInfo(`Generating report: ${vulnName}`);
     try {
@@ -235,7 +254,7 @@ async function main() {
     logError(`Email summary failed: ${err.message}`);
   }
 
-  logInfo(`Done. ${vulns.length} individual report(s) + 1 email summary generated.`);
+  logInfo(`Done. ${uniqueVulns.length} individual report(s) + 1 email summary generated.`);
 }
 
 main().catch((err) => {
