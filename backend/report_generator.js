@@ -458,31 +458,121 @@ async function generateContent(aiClient, prompt, retries = 2) {
 }
 
 // ---------------------------------------------------------------------------
+// Legacy JSON fallback — when the SQLite DB is empty (e.g. fresh container,
+// volume reset), reconstruct a scan payload from the newest scan_*.json file
+// that exporter.sh wrote into backend/database/.
+// ---------------------------------------------------------------------------
+function legacyJsonFallback(wantedDomain) {
+  const DB_DIR = path.join(__dirname, 'database');
+  let files;
+  try {
+    files = fsSync.readdirSync(DB_DIR)
+      .filter(f => f.startsWith('scan_') && f.endsWith('.json'));
+  } catch { return null; }
+  if (files.length === 0) return null;
+
+  // Sort newest first (filename embeds an ISO-ish timestamp, lexical = chrono).
+  files.sort().reverse();
+  for (const fileName of files) {
+    try {
+      const raw     = fsSync.readFileSync(path.join(DB_DIR, fileName), 'utf8');
+      const payload = JSON.parse(raw);
+      const domain  = Object.keys(payload)[0];
+      if (!domain) continue;
+      if (wantedDomain && domain.toLowerCase() !== wantedDomain.toLowerCase()) continue;
+      return payload; // shape already matches what main() expects
+    } catch { /* skip corrupt */ }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Placeholder report — written when there is literally nothing to report on
+// so the UI never sees "0 reports generated". Tells the user exactly what's
+// missing and how to fix it.
+// ---------------------------------------------------------------------------
+async function writePlaceholderReport(reason, wantedDomain, wantedScanId, dateTag) {
+  const safeTarget = sanitizeFilePart(wantedDomain || 'no_target');
+  const tag        = wantedScanId ? `_scan${wantedScanId}` : '';
+  const filePath   = path.join(REPORTS_DIR, `learning_report_${safeTarget}_${dateTag}${tag}.md`);
+  const body = [
+    `# Learning Report — ${wantedDomain || '(no target specified)'}`,
+    `_Generated ${dateTag}_`,
+    '',
+    '> ⚠️  **Nothing to report yet.**',
+    '',
+    `**Why:** ${reason}`,
+    '',
+    '## What to do',
+    '',
+    '1. Add a target on the **Targets** tab (or use **Bug Bounty** for scope-restricted scans).',
+    '2. Click **Scan** to launch a deep recon run.',
+    '3. Wait until the live log shows `[INFO] Scan closed with code 0` and `Ingest saved to SQLite`.',
+    '4. Click **Generate Report** again — you\'ll then get the full educational learning report,',
+    '   plus per-finding deep-dives if nuclei flagged any high/critical issues.',
+    '',
+    '## Common causes',
+    '',
+    '- The container was rebuilt and the SQLite database is fresh (no scans yet).',
+    '- The scan failed before the ingest step ran — open the live log and look for `[ERROR]` lines.',
+    '- You selected a past scan ID that no longer exists in the database.',
+    '',
+    '## Optional: enable the AI walkthrough',
+    '',
+    'Open **Settings → Gemini API Key** to get the full AI-generated educational walkthrough',
+    'with manual-testing playbook and per-finding deep-dives. Without a key the report contains',
+    'the raw recon-artifact tables only.',
+  ].join('\n');
+  await fs.mkdir(REPORTS_DIR, { recursive: true });
+  await fs.writeFile(filePath, body, 'utf8');
+  logInfo(`Placeholder report written: ${filePath}`);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 async function main() {
   const apiKey      = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
   const wantedDomain = (process.env.REPORT_DOMAIN || '').trim() || null;
   const wantedScanId = Number.parseInt(process.env.REPORT_SCAN_ID || '', 10);
+  const dateTag      = new Date().toISOString().slice(0, 10);
 
   // Pull scan from SQLite — by id when REPORT_SCAN_ID is supplied (used by
   // "Generate from past scan" in the UI), otherwise the latest scan for the
   // optional REPORT_DOMAIN. High/critical findings only at this layer.
-  const payload = Number.isInteger(wantedScanId) && wantedScanId > 0
+  let payload = Number.isInteger(wantedScanId) && wantedScanId > 0
     ? getScanById(wantedScanId)
     : getLatestScan(wantedDomain);
+
+  // Fallback 1: SQLite empty → use the newest legacy scan_*.json (only when
+  // a specific scan ID wasn't requested, since legacy files don't have IDs).
+  if (!payload && !(Number.isInteger(wantedScanId) && wantedScanId > 0)) {
+    payload = legacyJsonFallback(wantedDomain);
+    if (payload) logInfo('Using legacy scan_*.json fallback (SQLite had no matching scan).');
+  }
+
   if (!payload) {
-    logInfo(wantedScanId
-      ? `No scan with id=${wantedScanId} in database.`
+    const reason = wantedScanId
+      ? `Scan id=${wantedScanId} was not found in the database.`
       : (wantedDomain
-          ? `No scan data for "${wantedDomain}". Run a scan first.`
-          : 'No scan data in database. Run a scan first.'));
+          ? `No scan data found for "${wantedDomain}" in the database or under backend/database/.`
+          : 'The scan database is empty. Nothing has been scanned yet.');
+    logInfo(reason);
+    // Always write SOMETHING so the UI's "open the report" link works and
+    // the user can read what went wrong instead of getting a silent button.
+    await writePlaceholderReport(reason, wantedDomain, wantedScanId, dateTag);
+    process.exitCode = 2;
     return;
   }
 
   const targetDomain = Object.keys(payload).find(k => k !== '_scanId');
   if (!targetDomain) {
     logInfo('Could not determine target domain from payload.');
+    await writePlaceholderReport(
+      'The scan payload has no target domain key — the scan data may be corrupted.',
+      wantedDomain, wantedScanId, dateTag,
+    );
+    process.exitCode = 2;
     return;
   }
 
@@ -516,7 +606,6 @@ async function main() {
 
   await fs.mkdir(REPORTS_DIR, { recursive: true });
   const safeTarget = sanitizeFilePart(targetDomain);
-  const dateTag    = new Date().toISOString().slice(0, 10);
   // Include scan id (when present) in the filename so regenerating a past
   // scan's report doesn't overwrite today's latest-scan report.
   const scanTag    = Number.isInteger(wantedScanId) && wantedScanId > 0 ? `_scan${wantedScanId}` : '';

@@ -203,19 +203,20 @@ export default function LiveLogView({ initialDomain }) {
       });
       const body = await res.json();
       if (!res.ok) { setError(body.error || `HTTP ${res.status}`); return; }
-      if (body.reports && body.reports.length > 0) {
-        // Prefer the educational learning report; fall back to whatever is newest.
-        const learning = body.reports.find((r) => r.name.startsWith('learning_report_'));
-        const target   = learning ?? body.reports[0];
-        // ?preview=1 renders the Markdown source inline in the new tab
-        // (instead of triggering a forced download) so the user can read it.
-        window.open(`${API_BASE}/api/reports/${encodeURIComponent(target.name)}?preview=1`, '_blank');
+      const reports = body.reports || [];
+      if (reports.length === 0) {
+        setError(body.message || 'Report generator finished but produced no files.');
+        return;
       }
-      if (body.message) {
-        // Surface the soft-fail message (e.g. "add a Gemini API key for the full walkthrough")
-        // so the user knows a static report was produced when no key is set.
-        setError(body.message);
-      }
+      // Prefer the educational learning report; fall back to whatever is newest.
+      const learning = reports.find((r) => r.name.startsWith('learning_report_'));
+      const target   = learning ?? reports[0];
+      // ?preview=1 renders the Markdown source inline in the new tab
+      // (instead of triggering a forced download) so the user can read it.
+      window.open(`${API_BASE}/api/reports/${encodeURIComponent(target.name)}?preview=1`, '_blank');
+      // Always surface the backend message (e.g. "add a Gemini API key for the
+      // full walkthrough") so the user knows what kind of report they got.
+      if (body.message) setError(body.message);
     } catch (err) {
       setError(err.message);
     } finally {

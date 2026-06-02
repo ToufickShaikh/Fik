@@ -168,10 +168,20 @@ export default function TargetManager({ onSelectTarget }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       if (t) await loadDetails(t);
-      // Open the freshly-generated learning report inline for instant reading.
-      const fresh = (data.reports || []).find((r) => r.name.startsWith('learning_report_'));
+
+      const reports = data.reports || [];
+      // Always open SOMETHING so the click never feels silent. Prefer the
+      // learning report; otherwise the newest report; otherwise show the
+      // backend message in the panel so the user knows what happened.
+      const fresh = reports.find((r) => r.name.startsWith('learning_report_')) ?? reports[0];
       if (fresh) {
         window.open(`${API_BASE}/api/reports/${encodeURIComponent(fresh.name)}?preview=1`, '_blank');
+      }
+      if (data.message || !fresh) {
+        setDetails((prev) => ({ ...prev, [targetId]: {
+          ...prev[targetId],
+          error: data.message || 'Report generator finished but produced no files.',
+        } }));
       }
     } catch (err) {
       setDetails((prev) => ({ ...prev, [targetId]: { ...prev[targetId], error: err.message } }));
