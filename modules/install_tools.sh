@@ -53,6 +53,8 @@ _TOOL_SPECS=(
   "jq|jq|||"
   "unzip|unzip|||"
   "curl|curl|||"
+  # Offensive modules (deep profile)
+  "sqlmap|sqlmap|||"
 )
 
 # ---------------------------------------------------------------------------

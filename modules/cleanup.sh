@@ -56,23 +56,29 @@ run_cleanup() {
   if [[ "${slim_fields}" == "1" ]] && [[ -s "${sr_json}" ]] && command -v jq >/dev/null 2>&1; then
     log_info "Slimming vulnerability_objects in scan_results.json"
     local tmp="${sr_json}.slim"
+    # Every per-field accessor uses `try ... catch null` so a single malformed
+    # nuclei record (missing .info, non-string severity, etc.) cannot abort
+    # the whole transform and leave the user with a multi-MB scan_results.json.
     if jq '
       to_entries
       | map(
           .value.vulnerability_objects = (
             (.value.vulnerability_objects // [])
-            | map({
-                "template-id": (."template-id" // .template_id // .template // "unknown"),
-                type:          (.type // "http"),
-                host:          (.host // ."matched-at" // .matched_at // ""),
-                "matched-at":  (."matched-at" // .matched_at // .host // ""),
-                url:           (.url // ."matched-at" // .matched_at // ""),
-                info: {
-                  name:        (.info.name // .template_name // ."template-id" // .template_id // "Unnamed"),
-                  severity:    ((.info.severity // .severity // "info") | ascii_downcase),
-                  tags:        (.info.tags // [])
-                }
-              })
+            | map(
+                . as $f
+                | {
+                    "template-id": ((try $f."template-id" catch null) // (try $f.template_id catch null) // (try $f.template catch null) // "unknown"),
+                    type:          ((try $f.type catch null) // "http"),
+                    host:          ((try $f.host catch null) // (try $f."matched-at" catch null) // (try $f.matched_at catch null) // ""),
+                    "matched-at":  ((try $f."matched-at" catch null) // (try $f.matched_at catch null) // (try $f.host catch null) // ""),
+                    url:           ((try $f.url catch null) // (try $f."matched-at" catch null) // (try $f.matched_at catch null) // ""),
+                    info: {
+                      name:     ((try $f.info.name catch null) // (try $f.template_name catch null) // (try $f."template-id" catch null) // (try $f.template_id catch null) // "Unnamed"),
+                      severity: ((try ($f.info.severity | tostring) catch null) // (try ($f.severity | tostring) catch null) // "info") | ascii_downcase,
+                      tags:     ((try $f.info.tags catch null) // [])
+                    }
+                  }
+              )
           )
         )
       | from_entries

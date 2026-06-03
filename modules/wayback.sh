@@ -60,8 +60,27 @@ run_wayback_recon() {
     log_info "Using waybackurls binary"
     printf '%s\n' "${domains_to_query[@]}" | sort -u | run_tool "waybackurls" \
       bash -c "waybackurls >> '${raw}'" || true
-  else
-    log_warn "waybackurls not installed — falling back to CDX API via curl"
+  fi
+
+  # gau is a stronger archive aggregator (wayback + OTX + commoncrawl + URLscan)
+  # and usually returns 5-50× more URLs than waybackurls alone. Run it as an
+  # additional source whenever it is installed so cdn-protected / rate-limited
+  # wayback queries don't silently zero the corpus.
+  if command -v gau >/dev/null 2>&1; then
+    log_info "Augmenting with gau (wayback + OTX + commoncrawl + URLscan)"
+    local d
+    for d in "${domains_to_query[@]}"; do
+      run_tool "gau:${d}" bash -c \
+        "echo '${d}' | gau --threads 5 --timeout 30 --subs --providers wayback,otx,commoncrawl,urlscan >> '${raw}' 2>/dev/null" \
+        || true
+    done
+  fi
+
+  # CDX API fallback when neither tool is present OR when the corpus is still
+  # suspiciously small (< 25 URLs after the above runs).
+  local _raw_n; _raw_n="$(wc -l < "${raw}" 2>/dev/null | tr -d ' ' || echo 0)"
+  if (( _raw_n < 25 )); then
+    log_warn "Wayback corpus is small (${_raw_n}); falling back to CDX API via curl"
     local d
     for d in "${domains_to_query[@]}"; do
       run_tool "cdx:${d}" bash -c \

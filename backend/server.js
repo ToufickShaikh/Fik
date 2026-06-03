@@ -761,11 +761,15 @@ app.post('/api/ingest', async (req, res, next) => {
   try {
     const payload = req.body;
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-      return res.status(400).json({ error: 'Payload must be a JSON object.' });
+      logError(`/api/ingest 400 — payload not an object (typeof=${typeof payload}, isArray=${Array.isArray(payload)})`);
+      return res.status(400).json({ error: 'Payload must be a JSON object.', got: typeof payload });
     }
 
     const domain = Object.keys(payload)[0];
-    if (!domain) return res.status(400).json({ error: 'Payload has no target key.' });
+    if (!domain) {
+      logError(`/api/ingest 400 — payload object has no top-level target key. keys=${JSON.stringify(Object.keys(payload))}`);
+      return res.status(400).json({ error: 'Payload has no target key.' });
+    }
 
     const node    = payload[domain] ?? {};
     const scanId  = insertScan(

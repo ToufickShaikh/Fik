@@ -22,10 +22,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
       bash ca-certificates curl wget jq unzip git \
       dnsutils whois \
-      python3 python3-pip \
+      python3 python3-pip python3-venv \
       build-essential \
       libpcap0.8 libpcap-dev \
       dirb \
+      sqlmap \
       locales \
       chromium chromium-sandbox fonts-liberation \
       libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libxkbcommon0 \

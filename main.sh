@@ -132,6 +132,10 @@ MODULE_FILES=(
   "jsendpoints.sh"
   "takeover.sh"
   "secrets.sh"
+  "exposed_files.sh"
+  "sqli.sh"
+  "idor.sh"
+  "bruteforce.sh"
   "gf_triage.sh"
   "screenshots.sh"
   "cors.sh"
@@ -154,6 +158,10 @@ MODULE_FUNCTIONS=(
   "run_js_endpoints"
   "run_subdomain_takeover"
   "run_secret_scan"
+  "run_exposed_files_scan"
+  "run_sqli_scan"
+  "run_idor_scan"
+  "run_bruteforce_scan"
   "run_gf_triage"
   "run_screenshots"
   "run_cors_check"
@@ -165,12 +173,14 @@ MODULE_FUNCTIONS=(
 
 # Filter module list based on scan profile.
 # quick    → recon only (no crawl/fuzz/wayback/JS/secrets/screenshots/brute)
-# standard → balanced (skips deep brute + screenshots)
-# deep     → run absolutely everything
+# standard → balanced (skips deep brute + screenshots + offensive modules)
+# deep     → run absolutely everything (incl. SQLi, IDOR, bruteforce, exposed-file)
 _filtered_functions=()
 _QUICK_SKIP=( run_crawler run_fuzzer run_wayback_recon run_js_endpoints \
-              run_secret_scan run_gf_triage run_screenshots run_dns_brute )
-_STD_SKIP=( run_dns_brute run_screenshots )
+              run_secret_scan run_gf_triage run_screenshots run_dns_brute \
+              run_exposed_files_scan run_sqli_scan run_idor_scan run_bruteforce_scan )
+_STD_SKIP=( run_dns_brute run_screenshots \
+            run_exposed_files_scan run_sqli_scan run_idor_scan run_bruteforce_scan )
 for _fn in "${MODULE_FUNCTIONS[@]}"; do
   _skip=0
   if [[ "${SCAN_PROFILE}" == "quick" ]]; then

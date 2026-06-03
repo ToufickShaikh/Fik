@@ -63,9 +63,14 @@ detect_technologies() {
   fi
 
   # Map each detected tech to Nuclei tags via config file; deduplicate.
+  # Strip version suffixes (`iis:10.0` -> `iis`) and try both forms so the
+  # mapping table doesn't have to enumerate every version number.
   local all_tags
   all_tags="$(echo "${raw_tech_lines}" | while IFS= read -r tech; do
-    jq -r --arg k "${tech}" '.[$k] // [] | .[]' "${tech_config}" 2>/dev/null
+    [[ -z "${tech}" ]] && continue
+    local base="${tech%%:*}"
+    jq -r --arg k "${tech}" --arg b "${base}" \
+      '((.[$k] // []) + (.[$b] // [])) | .[]' "${tech_config}" 2>/dev/null
   done | sort -u | tr '\n' ',' | sed 's/,$//')"
 
   if [[ -n "${all_tags}" ]]; then

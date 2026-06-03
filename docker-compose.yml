@@ -20,6 +20,12 @@ services:
     oom_score_adj: 500
     # PID cap stops a runaway gowitness/katana from fork-bombing the host.
     pids_limit: 2048
+    # naabu needs raw sockets for SYN/ICMP probing. Without these caps it
+    # falls back to nothing and prints `socket: operation not permitted`,
+    # which is what produced 0 open ports in earlier scans.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     environment:
       # Mount the repo root at /framework so main.sh and modules/ are accessible.
       - FRAMEWORK_DIR=/framework
